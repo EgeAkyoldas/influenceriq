@@ -1,18 +1,25 @@
-import { getDb } from '@/lib/db';
+import { execute, getOne, getAll } from '@/lib/db';
 import { fetchProfileByUsername } from './instagram-client';
 import { analyzeProfile } from './ai-analyzer';
 import { applyPreFilters } from './pre-filter';
 import type { FilterSettings, Research } from '@/types';
 
-export async function runResearchPipeline(researchId: number): Promise<void> {
-  const db = getDb();
+// Helper: compute average stats from media
+export function computeMediaStats(media: Array<{ like_count?: number; comments_count?: number; timestamp?: string }>) {
+  const avgLikes = media.length > 0 ? media.reduce((sum, m) => sum + (m.like_count || 0), 0) / media.length : 0;
+  const avgComments = media.length > 0 ? media.reduce((sum, m) => sum + (m.comments_count || 0), 0) / media.length : 0;
+  const oldestPostDate = media.length > 0 ? media[media.length - 1]?.timestamp : undefined;
+  return { avgLikes, avgComments, oldestPostDate };
+}
 
-  const research = db.prepare('SELECT * FROM research WHERE id = ?').get(researchId) as Research | undefined;
+export async function runResearchPipeline(researchId: number): Promise<void> {
+  const research = await getOne<Research>('SELECT * FROM research WHERE id = ?', [researchId]);
   if (!research) throw new Error(`Research ${researchId} not found`);
 
-  const filterRow = db.prepare('SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)').all(
-    'min_followers', 'min_engagement_rate', 'min_english_content', 'min_posts_per_month'
-  ) as Array<{ key: string; value: string }>;
+  const filterRow = await getAll<{ key: string; value: string }>(
+    'SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)',
+    ['min_followers', 'min_engagement_rate', 'min_english_content', 'min_posts_per_month']
+  );
 
   const settings: FilterSettings = {
     min_followers: 5000,
@@ -36,13 +43,12 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
   }
 
   if (usernames.length === 0) {
-    db.prepare('UPDATE research SET status = ?, error_message = ? WHERE id = ?')
-      .run('failed', 'No valid usernames found in seed data', researchId);
+    await execute('UPDATE research SET status = ?, error_message = ? WHERE id = ?', ['failed', 'No valid usernames found in seed data', researchId]);
     return;
   }
 
   // Update status to fetching
-  db.prepare('UPDATE research SET status = ? WHERE id = ?').run('fetching', researchId);
+  await execute('UPDATE research SET status = ? WHERE id = ?', ['fetching', researchId]);
 
   let profilesFetched = 0;
   let profilesAnalyzed = 0;
@@ -58,11 +64,10 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
 
       // 2. Store profile
       const { profile, media } = result;
-      const insertProfile = db.prepare(`
+      const profileResult = await execute(`
         INSERT OR REPLACE INTO profiles (instagram_id, username, full_name, bio, followers_count, following_count, media_count, profile_pic_url, website, is_verified, research_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const profileResult = insertProfile.run(
+      `, [
         profile.id,
         profile.username || username,
         profile.name || '',
@@ -74,17 +79,16 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         profile.website || '',
         profile.is_verified ? 1 : 0,
         researchId
-      );
-      const profileId = profileResult.lastInsertRowid as number;
+      ]);
+      const profileId = Number(profileResult.lastInsertRowid);
       profilesFetched++;
 
       // 3. Store media
-      const insertMedia = db.prepare(`
-        INSERT OR IGNORE INTO media (profile_id, instagram_media_id, media_type, caption, like_count, comments_count, timestamp, permalink)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
       for (const m of media) {
-        insertMedia.run(
+        await execute(`
+          INSERT OR IGNORE INTO media (profile_id, instagram_media_id, media_type, caption, like_count, comments_count, timestamp, permalink)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
           profileId,
           m.id,
           m.media_type || 'IMAGE',
@@ -93,11 +97,11 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
           m.comments_count || 0,
           m.timestamp || '',
           m.permalink || ''
-        );
+        ]);
       }
 
       // Update count
-      db.prepare('UPDATE research SET profiles_found = ? WHERE id = ?').run(profilesFetched, researchId);
+      await execute('UPDATE research SET profiles_found = ? WHERE id = ?', [profilesFetched, researchId]);
 
       // 4. Pre-filter
       const captions = media.map(m => m.caption || '').filter(Boolean);
@@ -119,18 +123,17 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
 
       if (!filterResult.passed) {
         console.log(`Profile @${username} filtered out: ${filterResult.reasons.join(', ')}`);
-        // Store a minimal analysis with low scores
-        db.prepare(`
+        await execute(`
           INSERT OR REPLACE INTO analysis_results (profile_id, primary_cluster, relevance_score, authority_score, engagement_rate, tier, content_summary)
           VALUES (?, 'mindset', 0, 0, ?, 'D', ?)
-        `).run(profileId, engagementRate, `Filtered: ${filterResult.reasons.join('; ')}`);
+        `, [profileId, engagementRate, `Filtered: ${filterResult.reasons.join('; ')}`]);
         profilesAnalyzed++;
-        db.prepare('UPDATE research SET profiles_analyzed = ? WHERE id = ?').run(profilesAnalyzed, researchId);
+        await execute('UPDATE research SET profiles_analyzed = ? WHERE id = ?', [profilesAnalyzed, researchId]);
         continue;
       }
 
       // 5. AI Analysis
-      db.prepare('UPDATE research SET status = ? WHERE id = ?').run('analyzing', researchId);
+      await execute('UPDATE research SET status = ? WHERE id = ?', ['analyzing', researchId]);
 
       const analysis = await analyzeProfile({
         username: profile.username || username,
@@ -147,10 +150,13 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
       });
 
       // 6. Store analysis
-      db.prepare(`
-        INSERT OR REPLACE INTO analysis_results (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score, engagement_rate, monetization_signals, audience_alignment, risk_flags, tier, content_summary)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      await execute(`
+        INSERT OR REPLACE INTO analysis_results
+          (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score,
+           engagement_rate, monetization_signals, audience_alignment, tier, tier_reason,
+           content_summary, content_style, is_approved, rejection_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
         profileId,
         analysis.primary_cluster,
         analysis.secondary_cluster,
@@ -159,13 +165,16 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         engagementRate,
         JSON.stringify(analysis.monetization_signals),
         analysis.audience_alignment,
-        JSON.stringify(analysis.risk_flags),
         analysis.tier,
-        analysis.content_summary
-      );
+        analysis.tier_reason,
+        analysis.content_summary,
+        analysis.content_style,
+        analysis.is_approved ? 1 : 0,
+        analysis.rejection_reason ?? null
+      ]);
 
       profilesAnalyzed++;
-      db.prepare('UPDATE research SET profiles_analyzed = ? WHERE id = ?').run(profilesAnalyzed, researchId);
+      await execute('UPDATE research SET profiles_analyzed = ? WHERE id = ?', [profilesAnalyzed, researchId]);
 
     } catch (error) {
       console.error(`Error processing @${username}:`, error);
@@ -173,6 +182,5 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
   }
 
   // Mark complete
-  db.prepare('UPDATE research SET status = ?, completed_at = datetime(\'now\') WHERE id = ?')
-    .run('complete', researchId);
+  await execute("UPDATE research SET status = ?, completed_at = datetime('now') WHERE id = ?", ['complete', researchId]);
 }

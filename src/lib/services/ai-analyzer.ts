@@ -1,4 +1,6 @@
 import { generateWithFallback } from './gemini-client';
+import { buildClassifierPrompt, type ClassifierInput } from '@/lib/prompts/classifier';
+import { jsonrepair } from 'jsonrepair';
 import type { NicheCluster, Tier } from '@/types';
 
 interface ClassificationResult {
@@ -9,103 +11,131 @@ interface ClassificationResult {
   monetization_signals: string[];
   audience_alignment: number;
   risk_flags: string[];
+  content_style: string;
   tier: Tier;
+  tier_reason: string;
   content_summary: string;
+  is_approved: boolean;
+  rejection_reason: string | null;
 }
 
-interface ProfileDataForAnalysis {
+export interface EditorExample {
   username: string;
-  full_name: string;
-  bio: string;
-  followers_count: number;
-  following_count: number;
-  media_count: number;
-  website: string;
-  recent_captions: string[];
-  avg_likes: number;
-  avg_comments: number;
-  engagement_rate: number;
+  previous_tier: string | null;
+  new_tier: string;
+  editor_reason: string;
+  editor_note?: string;
 }
 
-export async function analyzeProfile(data: ProfileDataForAnalysis): Promise<ClassificationResult> {
-  const prompt = `You are an expert social media analyst specializing in male-focused Instagram niches. Analyze this Instagram profile and classify it.
+export type { ClassifierInput };
 
-## Profile Data
-- Username: @${data.username}
-- Name: ${data.full_name}
-- Bio: ${data.bio}
-- Followers: ${data.followers_count.toLocaleString()}
-- Following: ${data.following_count.toLocaleString()}
-- Posts: ${data.media_count}
-- Website: ${data.website || 'None'}
-- Avg Likes: ${data.avg_likes.toFixed(0)}
-- Avg Comments: ${data.avg_comments.toFixed(0)}
-- Engagement Rate: ${data.engagement_rate.toFixed(2)}%
-
-## Recent Post Captions (last 25):
-${data.recent_captions.map((c, i) => `${i + 1}. ${c.substring(0, 200)}`).join('\n')}
-
-## Classification Taxonomy
-Classify into ONE primary cluster and optionally ONE secondary cluster:
-1. **dating** — Men's Dating: pickup, attraction, dating advice, approaching women, texting game, date planning
-2. **mindset** — Men's Mindset: self-improvement, stoicism, motivation, discipline, goal-setting, mental health, productivity
-3. **relationships** — Men's Relationships: marriage advice, maintaining relationships, communication, commitment, family dynamics
-4. **masculinity** — Masculinity: traditional masculinity, fitness culture, male lifestyle, grooming, male identity, brotherhood
-
-## Scoring Criteria
-- **relevance_score** (0-100): How relevant is this profile to the male-focused niche clusters above?
-- **authority_score** (1-10): How authoritative is this voice? Consider follower count, engagement, content quality, expertise signals
-- **audience_alignment** (0-100): Estimated percentage of male-targeted content
-- **monetization_signals**: List any detected monetization strategies (e.g., "coaching", "course sales", "affiliate marketing", "webinar funnel", "digital products", "merchandise", "sponsorships", "paid community")
-- **risk_flags**: List any concerns (e.g., "low content originality", "engagement bait", "controversial content", "potential TOS violation", "bot-like engagement patterns")
-- **tier**: A (authority score 8-10), B (6-7.9), C (4-5.9), D (below 4)
-
-## Output Format
-Return ONLY valid JSON, no markdown, no explanations:
-{
-  "primary_cluster": "dating|mindset|relationships|masculinity",
-  "secondary_cluster": "dating|mindset|relationships|masculinity" or null,
-  "relevance_score": 0-100,
-  "authority_score": 1.0-10.0,
-  "monetization_signals": ["signal1", "signal2"],
-  "audience_alignment": 0-100,
-  "risk_flags": ["flag1"] or [],
-  "tier": "A|B|C|D",
-  "content_summary": "2-3 sentence summary of this influencer's content strategy and positioning"
-}`;
+export async function analyzeProfile(data: ClassifierInput): Promise<ClassificationResult> {
+  const prompt = buildClassifierPrompt(data);
 
   try {
     const text = await generateWithFallback({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       temperature: 0.3,
       maxOutputTokens: 1024,
+      jsonMode: true,  // Force valid JSON output from Gemini
     });
-    
-    // Strip markdown code fences if present
-    const jsonText = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
-    
-    const result = JSON.parse(jsonText) as ClassificationResult;
 
-    // Validate and normalize
+    // Strip any markdown fences if model ignored JSON mode
+    const stripped = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    // DEBUG: log raw output to terminal
+    console.log(`[AI-ANALYZER] Raw Gemini (300 chars): ${stripped.substring(0, 300)}`);
+    console.log(`[AI-ANALYZER] Char at pos 85: "${stripped[85]}" (code: ${stripped.charCodeAt(85)})`);
+
+    // Stage 1: direct parse
+    let result: ClassificationResult;
+    try {
+      result = JSON.parse(stripped) as ClassificationResult;
+    } catch (e1) {
+      console.log(`[AI-ANALYZER] Stage 1 failed: ${e1}`);
+      const blockMatch = stripped.match(/\{[\s\S]*\}/);
+      const block = blockMatch ? blockMatch[0] : stripped;
+      try {
+        result = JSON.parse(block) as ClassificationResult;
+      } catch (e2) {
+        console.log(`[AI-ANALYZER] Stage 2 failed: ${e2}`);
+        try {
+          result = JSON.parse(jsonrepair(block)) as ClassificationResult;
+        } catch (e3) {
+          console.log(`[AI-ANALYZER] All stages failed. Full text:\n${stripped}`);
+          throw e3;
+        }
+      }
+    }
+
+    // Validate and normalize clusters
     const validClusters: NicheCluster[] = ['dating', 'mindset', 'relationships', 'masculinity'];
     if (!validClusters.includes(result.primary_cluster)) {
-      result.primary_cluster = 'mindset'; // default fallback
+      result.primary_cluster = 'mindset';
     }
     if (result.secondary_cluster && !validClusters.includes(result.secondary_cluster)) {
       result.secondary_cluster = null;
     }
-    result.relevance_score = Math.max(0, Math.min(100, result.relevance_score));
-    result.authority_score = Math.max(1, Math.min(10, result.authority_score));
-    result.audience_alignment = Math.max(0, Math.min(100, result.audience_alignment));
-    
-    const validTiers: Tier[] = ['A', 'B', 'C', 'D'];
+
+    // Clamp scores — coerce null/undefined/NaN safely first
+    result.relevance_score    = Math.max(0, Math.min(100, Number(result.relevance_score)  || 0));
+    result.authority_score    = Math.max(1, Math.min(10,  Number(result.authority_score)  || 1));
+    result.audience_alignment = Math.max(0, Math.min(100, Number(result.audience_alignment) || 0));
+
+    // Tier validation — fallback based on relevance_score (primary driver)
+    const validTiers: Tier[] = ['S', 'A', 'B', 'C', 'D'];
     if (!validTiers.includes(result.tier)) {
-      result.tier = result.authority_score >= 8 ? 'A' : result.authority_score >= 6 ? 'B' : result.authority_score >= 4 ? 'C' : 'D';
+      result.tier = result.relevance_score >= 90 ? 'S'
+        : result.relevance_score >= 75 ? 'A'
+        : result.relevance_score >= 55 ? 'B'
+        : result.relevance_score >= 35 ? 'C' : 'D';
     }
 
     if (!Array.isArray(result.monetization_signals)) result.monetization_signals = [];
+
+    // Normalize risk_flags — whitelist-only, filter out hallucinated strings
+    const validRiskFlags = [
+      'Suspected fake engagement',
+      'Very low posting frequency',
+      'High follow-to-follower ratio',
+      'No coaching offer in bio',
+      'Meme / faceless content',
+      'Audience mismatch',
+      'Micro account risk',
+      'Large account risk',
+      'Low authority signal',
+    ];
     if (!Array.isArray(result.risk_flags)) result.risk_flags = [];
+    result.risk_flags = result.risk_flags.filter((f: string) => validRiskFlags.includes(f));
+
+    // If AI returned Unknown or empty → derive best guess from tier/cluster
+    const validStyles = ['Face to camera', 'POV approach', 'Text overlay', 'Mixed', 'Meme / aggregator', 'Lifestyle / vlog'];
+    if (!result.content_style || !validStyles.includes(result.content_style)) {
+      // Best-guess fallback: high-relevance accounts are likely face-to-camera, low-relevance Mixed
+      result.content_style = result.relevance_score >= 60 ? 'Face to camera' : 'Mixed';
+    }
+
     if (!result.content_summary) result.content_summary = '';
+    if (!result.tier_reason) result.tier_reason = '';
+
+    result.is_approved = Boolean(result.is_approved);
+    if (result.is_approved) {
+      result.rejection_reason = null;
+    } else if (!result.rejection_reason || result.rejection_reason.trim() === '') {
+      // AI forgot to provide a reason — derive fallback from available signals
+      const tier = result.tier;
+      const style = result.content_style;
+      if (tier === 'D') {
+        result.rejection_reason = `Tier D: Profile does not meet baseline criteria for a men's dating coaching partnership.`;
+      } else if (style === 'Meme / aggregator' || style === 'Text overlay') {
+        result.rejection_reason = `Content format (${style}) is not suitable — face-to-camera coaching content required.`;
+      } else {
+        result.rejection_reason = `Tier ${tier}: Insufficient relevance or coaching signals to qualify.`;
+      }
+    }
 
     return result;
   } catch (error) {
@@ -113,5 +143,3 @@ Return ONLY valid JSON, no markdown, no explanations:
     throw new Error(`Failed to analyze profile @${data.username}: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
-
-export type { ProfileDataForAnalysis, ClassificationResult };

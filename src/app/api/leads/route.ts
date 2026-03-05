@@ -1,9 +1,9 @@
-import { getDb } from '@/lib/db';
+import { getOne, getAll, execute } from '@/lib/db';
+import { type InValue } from '@libsql/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   try {
-    const db = getDb();
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')));
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const sortDir = searchParams.get('sort_dir') === 'asc' ? 'ASC' : 'DESC';
 
     let where = 'WHERE 1=1';
-    const params: unknown[] = [];
+    const params: InValue[] = [];
 
     if (search) {
       where += ' AND (l.username LIKE ? OR l.csv_niche LIKE ?)';
@@ -37,20 +37,21 @@ export async function GET(req: NextRequest) {
     const allowedSorts = ['created_at', 'username', 'csv_niche', 'csv_hq_score', 'fetch_status', 'csv_followers_range'];
     const safeSort = allowedSorts.includes(sortBy) ? sortBy : 'created_at';
 
-    const countResult = db.prepare(`SELECT COUNT(*) as count FROM leads l ${where}`).get(...params) as { count: number };
-    const leads = db.prepare(
+    const countResult = await getOne<{ count: number }>(`SELECT COUNT(*) as count FROM leads l ${where}`, params);
+    const leads = await getAll(
       `SELECT l.*, p.followers_count, p.full_name, p.profile_pic_url
        FROM leads l LEFT JOIN profiles p ON l.profile_id = p.id
-       ${where} ORDER BY l.${safeSort} ${sortDir} LIMIT ? OFFSET ?`
-    ).all(...params, limit, offset);
+       ${where} ORDER BY l.${safeSort} ${sortDir} LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
 
     // Get niche distribution
-    const niches = db.prepare('SELECT csv_niche, COUNT(*) as count FROM leads GROUP BY csv_niche ORDER BY count DESC').all();
-    const statusCounts = db.prepare('SELECT fetch_status, COUNT(*) as count FROM leads GROUP BY fetch_status').all();
+    const niches = await getAll('SELECT csv_niche, COUNT(*) as count FROM leads GROUP BY csv_niche ORDER BY count DESC');
+    const statusCounts = await getAll('SELECT fetch_status, COUNT(*) as count FROM leads GROUP BY fetch_status');
 
     return NextResponse.json({
       data: leads,
-      pagination: { page, limit, total: countResult.count, totalPages: Math.ceil(countResult.count / limit) },
+      pagination: { page, limit, total: countResult?.count ?? 0, totalPages: Math.ceil((countResult?.count ?? 0) / limit) },
       filters: { niches, statusCounts },
     });
   } catch (error) {
@@ -61,7 +62,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const db = getDb();
     const body = await req.json();
     const { username, csv_niche, csv_followers_range, csv_hq_score, csv_hq } = body;
 
@@ -70,16 +70,17 @@ export async function POST(req: NextRequest) {
     }
 
     const cleaned = username.trim().replace('@', '').toLowerCase();
-    const result = db.prepare(
+    const result = await execute(
       `INSERT INTO leads (username, csv_niche, csv_followers_range, csv_hq_score, csv_hq)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(username) DO UPDATE SET
          csv_niche = COALESCE(excluded.csv_niche, leads.csv_niche),
          csv_followers_range = COALESCE(excluded.csv_followers_range, leads.csv_followers_range),
-         updated_at = datetime('now')`
-    ).run(cleaned, csv_niche || null, csv_followers_range || null, csv_hq_score || 0, csv_hq ? 1 : 0);
+         updated_at = datetime('now')`,
+      [cleaned, csv_niche || null, csv_followers_range || null, csv_hq_score || 0, csv_hq ? 1 : 0]
+    );
 
-    return NextResponse.json({ id: result.lastInsertRowid, username: cleaned }, { status: 201 });
+    return NextResponse.json({ id: Number(result.lastInsertRowid), username: cleaned }, { status: 201 });
   } catch (error) {
     console.error('Lead create error:', error);
     return NextResponse.json({ error: 'Failed to create lead' }, { status: 500 });
@@ -88,7 +89,6 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const db = getDb();
     const body = await req.json();
     const { ids } = body as { ids: number[] };
 
@@ -97,9 +97,9 @@ export async function DELETE(req: NextRequest) {
     }
 
     const placeholders = ids.map(() => '?').join(',');
-    const result = db.prepare(`DELETE FROM leads WHERE id IN (${placeholders})`).run(...ids);
+    const result = await execute(`DELETE FROM leads WHERE id IN (${placeholders})`, ids);
 
-    return NextResponse.json({ deleted: result.changes });
+    return NextResponse.json({ deleted: result.rowsAffected });
   } catch (error) {
     console.error('Lead delete error:', error);
     return NextResponse.json({ error: 'Failed to delete leads' }, { status: 500 });

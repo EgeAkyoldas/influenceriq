@@ -1,4 +1,4 @@
-import { getDb } from '@/lib/db';
+import { execute, getAll } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { runResearchPipeline } from '@/lib/services/research-pipeline';
 
@@ -15,15 +15,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'seed_type must be "username" or "csv"' }, { status: 400 });
     }
 
-    const db = getDb();
-    const result = db.prepare('INSERT INTO research (seed_type, seed_value, status) VALUES (?, ?, ?)').run(seed_type, seed_value, 'pending');
-    const researchId = result.lastInsertRowid as number;
+    const result = await execute('INSERT INTO research (seed_type, seed_value, status) VALUES (?, ?, ?)', [seed_type, seed_value, 'pending']);
+    const researchId = Number(result.lastInsertRowid);
 
     // Run pipeline async (don't await — return immediately)
-    runResearchPipeline(researchId).catch(err => {
+    runResearchPipeline(researchId).catch(async (err) => {
       console.error('Pipeline error:', err);
-      db.prepare('UPDATE research SET status = ?, error_message = ? WHERE id = ?')
-        .run('failed', err.message, researchId);
+      await execute('UPDATE research SET status = ?, error_message = ? WHERE id = ?', ['failed', err.message, researchId]);
     });
 
     return NextResponse.json({ id: researchId, status: 'pending' }, { status: 201 });
@@ -35,8 +33,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const db = getDb();
-    const researches = db.prepare('SELECT * FROM research ORDER BY created_at DESC LIMIT 50').all();
+    const researches = await getAll('SELECT * FROM research ORDER BY created_at DESC LIMIT 50');
     return NextResponse.json(researches);
   } catch (error) {
     console.error('Research list error:', error);

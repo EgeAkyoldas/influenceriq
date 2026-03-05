@@ -1,18 +1,19 @@
-import { getDb } from '@/lib/db';
+import { getOne, execute } from '@/lib/db';
+import { type InValue } from '@libsql/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const db = getDb();
-    const lead = db.prepare(
+    const lead = await getOne(
       `SELECT l.*, p.followers_count, p.full_name, p.bio, p.profile_pic_url, p.media_count,
               a.primary_cluster, a.authority_score, a.relevance_score, a.tier, a.content_summary
        FROM leads l
        LEFT JOIN profiles p ON l.profile_id = p.id
        LEFT JOIN analysis_results a ON p.id = a.profile_id
-       WHERE l.id = ?`
-    ).get(id);
+       WHERE l.id = ?`,
+      [id]
+    );
 
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
@@ -28,12 +29,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const db = getDb();
     const body = await req.json();
     const { csv_niche, csv_followers_range, csv_hq_score, csv_hq, fetch_status } = body;
 
     const updates: string[] = [];
-    const values: unknown[] = [];
+    const values: InValue[] = [];
 
     if (csv_niche !== undefined) { updates.push('csv_niche = ?'); values.push(csv_niche); }
     if (csv_followers_range !== undefined) { updates.push('csv_followers_range = ?'); values.push(csv_followers_range); }
@@ -48,8 +48,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     updates.push("updated_at = datetime('now')");
     values.push(id);
 
-    db.prepare(`UPDATE leads SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-    const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(id);
+    await execute(`UPDATE leads SET ${updates.join(', ')} WHERE id = ?`, values);
+    const updated = await getOne('SELECT * FROM leads WHERE id = ?', [id]);
 
     return NextResponse.json(updated);
   } catch (error) {
@@ -61,10 +61,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const db = getDb();
-    const result = db.prepare('DELETE FROM leads WHERE id = ?').run(id);
+    const result = await execute('DELETE FROM leads WHERE id = ?', [id]);
 
-    if (result.changes === 0) {
+    if (result.rowsAffected === 0) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 

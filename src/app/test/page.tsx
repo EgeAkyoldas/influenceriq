@@ -8,10 +8,6 @@ import {
   ExternalLink, RefreshCw
 } from 'lucide-react';
 
-interface FieldCategory {
-  label: string;
-  fields: string[];
-}
 
 const DEFAULT_PROFILE_FIELDS = ['id', 'username', 'name', 'biography', 'followers_count', 'follows_count', 'media_count', 'profile_picture_url', 'website', 'ig_id'];
 const DEFAULT_MEDIA_FIELDS = ['id', 'media_type', 'media_url', 'thumbnail_url', 'caption', 'like_count', 'comments_count', 'timestamp', 'permalink', 'media_product_type'];
@@ -225,7 +221,7 @@ export default function TestPage() {
                     <div className="p-4">
                       {/* Profile Summary */}
                       <div className="flex items-start gap-4 mb-4">
-                        {profile.profile_picture_url && (
+                        {Boolean(profile.profile_picture_url) && (
                           <img
                             src={profile.profile_picture_url as string}
                             alt={profile.username as string}
@@ -266,7 +262,7 @@ export default function TestPage() {
               )}
 
               {/* Computed Metrics */}
-              {metrics && (
+              {metrics ? (
                 <CollapsibleSection
                   icon={<BarChart3 className="w-5 h-5 text-fuchsia-400" />}
                   title="Computed Metrics"
@@ -278,7 +274,7 @@ export default function TestPage() {
                   onCopy={() => copySection('metrics', metrics)}
                   copied={copiedSection === 'metrics'}
                 />
-              )}
+              ) : null}
 
               {/* Media */}
               {media.length > 0 && (
@@ -302,7 +298,7 @@ export default function TestPage() {
                       {media.map((m, i) => (
                         <div key={m.id as string || i} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3">
                           <div className="flex items-start gap-3">
-                            {m.media_url && (
+                            {Boolean(m.media_url) && (
                               <img
                                 src={m.media_url as string}
                                 alt=""
@@ -316,7 +312,7 @@ export default function TestPage() {
                                   {m.media_type as string || 'UNKNOWN'}
                                 </span>
                                 <span className="text-[10px] text-zinc-500">{m.timestamp ? new Date(m.timestamp as string).toLocaleDateString() : ''}</span>
-                                {m.permalink && (
+                                {Boolean(m.permalink) && (
                                   <a href={m.permalink as string} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300">
                                     <ExternalLink className="w-3 h-3" />
                                   </a>
@@ -337,7 +333,7 @@ export default function TestPage() {
               )}
 
               {/* Direct Profile */}
-              {result.direct_profile && (
+              {result.direct_profile ? (
                 <CollapsibleSection
                   icon={<User className="w-5 h-5 text-teal-400" />}
                   title="Direct Profile Query"
@@ -349,7 +345,7 @@ export default function TestPage() {
                   onCopy={() => copySection('direct', (result.direct_profile as Record<string, unknown>)?.data)}
                   copied={copiedSection === 'direct'}
                 />
-              )}
+              ) : null}
 
               {/* Raw Full Response */}
               <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl overflow-hidden">

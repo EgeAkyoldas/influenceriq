@@ -18,6 +18,7 @@ interface ResearchState {
 interface CandidateFilters {
   cluster: NicheCluster | null;
   tier: Tier | null;
+  archetype: string | null;
   search: string;
   sortBy: string;
   sortOrder: 'ASC' | 'DESC';
@@ -83,6 +84,7 @@ interface AppStore extends ResearchState, UIState {
 const defaultFilters: CandidateFilters = {
   cluster: null,
   tier: null,
+  archetype: null,
   search: '',
   sortBy: 'authority_score',
   sortOrder: 'DESC',
@@ -96,7 +98,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isSubmitting: false,
   theme: 'dark',
   sidebarOpen: true,
-  isAuthenticated: false,
+  isAuthenticated: true, // Demo mode
   token: null,
   username: null,
   filters: { ...defaultFilters },

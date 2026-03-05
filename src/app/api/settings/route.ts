@@ -1,10 +1,9 @@
-import { getDb } from '@/lib/db';
+import { getAll, batch } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const db = getDb();
-    const settings = db.prepare('SELECT key, value FROM settings').all() as Array<{ key: string; value: string }>;
+    const settings = await getAll<{ key: string; value: string }>('SELECT key, value FROM settings');
     const settingsObj: Record<string, string> = {};
     for (const s of settings) settingsObj[s.key] = s.value;
     return NextResponse.json(settingsObj);
@@ -17,15 +16,13 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const db = getDb();
-    const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     
-    const tx = db.transaction(() => {
-      for (const [key, value] of Object.entries(body)) {
-        upsert.run(key, String(value));
-      }
-    });
-    tx();
+    const statements = Object.entries(body).map(([key, value]) => ({
+      sql: 'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+      args: [key, String(value)] as [string, string],
+    }));
+
+    await batch(statements);
 
     return NextResponse.json({ success: true });
   } catch (error) {

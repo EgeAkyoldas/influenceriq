@@ -1,5 +1,5 @@
 export type NicheCluster = 'dating' | 'mindset' | 'relationships' | 'masculinity';
-export type Tier = 'A' | 'B' | 'C' | 'D';
+export type Tier = 'S' | 'A' | 'B' | 'C' | 'D';
 export type AnalysisStatus = 'pending' | 'fetching' | 'analyzing' | 'complete' | 'failed';
 export type SeedType = 'username' | 'hashtag' | 'csv';
 
@@ -29,7 +29,7 @@ export interface AnalysisResult {
   engagement_rate: number;
   monetization_signals: string[];
   audience_alignment: number;
-  risk_flags: string[];
+  content_style: string;
   tier: Tier;
   content_summary: string;
   analyzed_at: string;

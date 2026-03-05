@@ -1,15 +1,18 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, FileText, Settings,
-  Search, Moon, Sun, LogOut, Menu, X, Radar, Database, Activity
+  Moon, Sun, PanelLeftClose, PanelLeftOpen,
+  Database, Activity, Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAppStore } from '@/lib/store';
+import { FaviconSwitcher } from '@/components/layout/favicon-switcher';
 
 const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -22,7 +25,9 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sidebarOpen, toggleSidebar, theme, toggleTheme, logout } = useAppStore();
+  const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useAppStore();
+
+  const logoSrc = theme === 'dark' ? '/lionalyze-light.png' : '/lionalyze-dark.png';
 
   return (
     <>
@@ -44,32 +49,55 @@ export function Sidebar() {
         initial={false}
         animate={{ width: sidebarOpen ? 240 : 72 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed left-0 top-0 bottom-0 z-50 bg-card border-r border-border flex flex-col"
+        className="fixed left-0 top-0 bottom-0 z-50 bg-card border-r border-border flex flex-col overflow-hidden"
       >
-        {/* Logo area */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <AnimatePresence mode="wait">
+        {/* ── Logo area ──────────────────────────────────────────────────────
+            Icon slot is fixed 36×36 — position never shifts between states.
+            When open, "LIONALYZE" fades in beside it. No collapse button here.
+        ─────────────────────────────────────────────────────────────────── */}
+        <div className="h-16 flex items-center px-3 border-b border-border shrink-0 gap-2 overflow-hidden">
+          {/* Fixed icon slot */}
+          <div
+            className="shrink-0 overflow-hidden"
+            style={{ width: 36, height: 36, position: 'relative' }}
+          >
+            <Image
+              src={logoSrc}
+              alt="Lionalyze"
+              fill
+              sizes="36px"
+              style={{
+                transform: 'scaleX(-1)',
+                objectFit: 'contain',
+                objectPosition: 'left center',
+              }}
+              priority
+            />
+          </div>
+
+          {/* Site name — appears only when sidebar is open */}
+          <AnimatePresence>
             {sidebarOpen && (
-              <motion.div
+              <motion.span
+                key="site-name"
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -10 }}
-                className="flex items-center gap-2"
+                transition={{ duration: 0.18 }}
+                className="whitespace-nowrap font-bold tracking-widest text-sm uppercase select-none"
               >
-                <Radar className="w-6 h-6 text-primary" />
-                <span className="font-bold text-sm tracking-tight">InfluencerIQ</span>
-              </motion.div>
+                LIONALYZE
+              </motion.span>
             )}
           </AnimatePresence>
-          <Button variant="ghost" size="icon" onClick={toggleSidebar} className="shrink-0">
-            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          </Button>
         </div>
 
-        {/* Navigation */}
+        {/* ── Navigation ─────────────────────────────────────────────────── */}
         <nav className="flex-1 py-4 space-y-1 px-2">
           {navItems.map(item => {
-            const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+            const isActive =
+              pathname === item.href ||
+              (item.href !== '/' && pathname.startsWith(item.href));
             return (
               <Tooltip key={item.href} delayDuration={0}>
                 <TooltipTrigger asChild>
@@ -106,7 +134,7 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Bottom actions */}
+        {/* ── Bottom actions ─────────────────────────────────────────────── */}
         <div className="p-2 border-t border-border space-y-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -115,25 +143,41 @@ export function Sidebar() {
                 className="w-full justify-start gap-3 px-3"
                 onClick={toggleTheme}
               >
-                {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                {sidebarOpen && <span className="text-sm">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
+                {theme === 'dark'
+                  ? <Sun className="w-5 h-5" />
+                  : <Moon className="w-5 h-5" />
+                }
+                {sidebarOpen && (
+                  <span className="text-sm">
+                    {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                  </span>
+                )}
               </Button>
             </TooltipTrigger>
             {!sidebarOpen && <TooltipContent side="right">Toggle Theme</TooltipContent>}
           </Tooltip>
 
+
+          {/* Collapse / Expand — pinned at the very bottom of the sidebar */}
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                className="w-full justify-start gap-3 px-3 text-destructive hover:text-destructive"
-                onClick={logout}
+                onClick={toggleSidebar}
+                className="w-full justify-start gap-3 px-3 h-9"
               >
-                <LogOut className="w-5 h-5" />
-                {sidebarOpen && <span className="text-sm">Logout</span>}
+                {sidebarOpen
+                  ? <PanelLeftClose className="w-4 h-4 shrink-0" />
+                  : <PanelLeftOpen className="w-4 h-4 shrink-0" />
+                }
+                {sidebarOpen && (
+                  <span className="text-sm text-muted-foreground">Collapse</span>
+                )}
               </Button>
             </TooltipTrigger>
-            {!sidebarOpen && <TooltipContent side="right">Logout</TooltipContent>}
+            {!sidebarOpen && (
+              <TooltipContent side="right">Expand sidebar</TooltipContent>
+            )}
           </Tooltip>
         </div>
       </motion.aside>
@@ -145,9 +189,10 @@ export function Header() {
   const { sidebarOpen } = useAppStore();
   const pathname = usePathname();
 
-  const pageTitle = navItems.find(item =>
-    pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
-  )?.label || 'Dashboard';
+  const pageTitle =
+    navItems.find(item =>
+      pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+    )?.label || 'Dashboard';
 
   return (
     <header
@@ -167,6 +212,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      <FaviconSwitcher />
       <Sidebar />
       <Header />
       <main

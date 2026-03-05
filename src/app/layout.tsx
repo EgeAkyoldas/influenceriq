@@ -11,9 +11,18 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "InfluencerIQ — Instagram Intelligence Platform",
+  title: "Lionalyze — Influencer Intelligence",
   description: "AI-powered Instagram influencer identification, classification, and scoring for male-focused niche clusters.",
+  icons: {
+    icon: [
+      { url: '/lionalyze.ico', media: '(prefers-color-scheme: dark)' },
+      { url: '/lionalyze-dark.ico', media: '(prefers-color-scheme: light)' },
+    ],
+    shortcut: '/lionalyze.ico',
+    apple: '/lionalyze-light.png',
+  },
 };
+
 
 export default function RootLayout({
   children,

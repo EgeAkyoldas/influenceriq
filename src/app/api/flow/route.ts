@@ -1,57 +1,54 @@
-import { getDb } from '@/lib/db';
+import { getOne, getAll } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
-  const db = getDb();
-
   // Lead counts by status
-  const leadStats = db.prepare(`
+  const leadStats = await getAll<{ fetch_status: string; count: number }>(`
     SELECT fetch_status, COUNT(*) as count FROM leads GROUP BY fetch_status
-  `).all() as Array<{ fetch_status: string; count: number }>;
-  const totalLeads = leadStats.reduce((s, r) => s + r.count, 0);
-  const statusMap = Object.fromEntries(leadStats.map(r => [r.fetch_status, r.count]));
+  `);
+  const totalLeads = leadStats.reduce((s, r) => s + Number(r.count), 0);
+  const statusMap = Object.fromEntries(leadStats.map(r => [r.fetch_status, Number(r.count)]));
 
   // Total unique leads (after dedup)
   const uniqueLeads = totalLeads;
 
   // Profiles fetched
-  const profileCount = (db.prepare('SELECT COUNT(*) as c FROM profiles').get() as { c: number })?.c || 0;
+  const profileCount = Number((await getOne<{ c: number }>('SELECT COUNT(*) as c FROM profiles'))?.c || 0);
 
   // Media count
-  const mediaCount = (db.prepare('SELECT COUNT(*) as c FROM media').get() as { c: number })?.c || 0;
+  const mediaCount = Number((await getOne<{ c: number }>('SELECT COUNT(*) as c FROM media'))?.c || 0);
   const avgMediaPerProfile = profileCount > 0 ? Math.round(mediaCount / profileCount) : 0;
 
   // Analysis results
-  const analysisCount = (db.prepare('SELECT COUNT(*) as c FROM analysis_results').get() as { c: number })?.c || 0;
+  const analysisCount = Number((await getOne<{ c: number }>('SELECT COUNT(*) as c FROM analysis_results'))?.c || 0);
 
   // Tier distribution
-  const tierStats = db.prepare(`
+  const tierStats = await getAll<{ tier: string; count: number }>(`
     SELECT tier, COUNT(*) as count FROM analysis_results WHERE tier IS NOT NULL GROUP BY tier ORDER BY tier
-  `).all() as Array<{ tier: string; count: number }>;
+  `);
 
   // Cluster distribution
-  const clusterStats = db.prepare(`
+  const clusterStats = await getAll<{ primary_cluster: string; count: number }>(`
     SELECT primary_cluster, COUNT(*) as count FROM analysis_results WHERE primary_cluster IS NOT NULL GROUP BY primary_cluster ORDER BY count DESC
-  `).all() as Array<{ primary_cluster: string; count: number }>;
+  `);
 
   // Candidates (Tier A + B)
-  const candidateCount = (db.prepare("SELECT COUNT(*) as c FROM analysis_results WHERE tier IN ('A', 'B')").get() as { c: number })?.c || 0;
+  const candidateCount = Number((await getOne<{ c: number }>("SELECT COUNT(*) as c FROM analysis_results WHERE tier IN ('A', 'B')"))?.c || 0);
 
   // Batch job + ETA
-  const lastBatch = db.prepare('SELECT * FROM batch_jobs ORDER BY id DESC LIMIT 1').get() as {
+  const lastBatch = await getOne<{
     status: string; total_leads: number; processed: number; fetched: number; errors: number; unfetchable: number; started_at: string;
-  } | undefined;
+  }>('SELECT * FROM batch_jobs ORDER BY id DESC LIMIT 1');
 
   let batchSubtitle = 'Idle';
   let etaText = '';
 
   if (lastBatch && lastBatch.status === 'running') {
-    const remaining = lastBatch.total_leads - lastBatch.processed;
-    // Calculate actual throughput from elapsed time
-    let secPerLead = 5; // fallback: 5s rate limit
-    if (lastBatch.started_at && lastBatch.processed > 0) {
+    const remaining = Number(lastBatch.total_leads) - Number(lastBatch.processed);
+    let secPerLead = 5;
+    if (lastBatch.started_at && Number(lastBatch.processed) > 0) {
       const elapsed = (Date.now() - new Date(lastBatch.started_at + 'Z').getTime()) / 1000;
-      secPerLead = elapsed / lastBatch.processed;
+      secPerLead = elapsed / Number(lastBatch.processed);
     }
     const etaSec = Math.round(remaining * secPerLead);
 

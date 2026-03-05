@@ -1,17 +1,15 @@
-import { getDb } from '@/lib/db';
+import { getOne, batch as dbBatch } from '@/lib/db';
+import { type InValue } from '@libsql/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 function extractUsername(url: string): string | null {
   try {
-    // Remove query params and trailing slashes
     let cleaned = url.split('?')[0].replace(/\/+$/, '');
-    // Remove base URL
     cleaned = cleaned
       .replace('https://www.instagram.com/', '')
       .replace('https://instagram.com/', '')
       .replace('http://www.instagram.com/', '')
       .replace('http://instagram.com/', '');
-    // Get first path segment (username)
     const username = cleaned.split('/')[0].trim();
     return username && username.length > 0 ? username : null;
   } catch {
@@ -45,54 +43,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'CSV must have a LINK column' }, { status: 400 });
     }
 
-    const db = getDb();
-    const upsert = db.prepare(`
-      INSERT INTO leads (username, instagram_url, csv_niche, csv_followers_range, csv_hq_score, csv_hq, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT(username) DO UPDATE SET
-        instagram_url = COALESCE(excluded.instagram_url, leads.instagram_url),
-        csv_niche = COALESCE(excluded.csv_niche, leads.csv_niche),
-        csv_followers_range = COALESCE(excluded.csv_followers_range, leads.csv_followers_range),
-        csv_hq_score = COALESCE(excluded.csv_hq_score, leads.csv_hq_score),
-        csv_hq = COALESCE(excluded.csv_hq, leads.csv_hq),
-        updated_at = datetime('now')
-    `);
-
     let imported = 0;
     let skipped = 0;
     let duplicates = 0;
     const seenUsernames = new Set<string>();
+    const statements: Array<{ sql: string; args: InValue[] }> = [];
 
-    const insertMany = db.transaction(() => {
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim());
-        const url = cols[linkIdx] || '';
-        const username = extractUsername(url);
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.trim());
+      const url = cols[linkIdx] || '';
+      const username = extractUsername(url);
 
-        if (!username) {
-          skipped++;
-          continue;
-        }
-
-        if (seenUsernames.has(username)) {
-          duplicates++;
-          continue;
-        }
-        seenUsernames.add(username);
-
-        const niche = nicheIdx >= 0 ? (cols[nicheIdx] || '').trim() : null;
-        const followersRange = followersIdx >= 0 ? (cols[followersIdx] || '').trim() : null;
-        const hqScore = accountIdx >= 0 ? parseFloat(cols[accountIdx]) || 0 : 0;
-        const hq = hqIdx >= 0 ? (cols[hqIdx] || '').toUpperCase() === 'TRUE' ? 1 : 0 : 0;
-
-        upsert.run(username, url, niche, followersRange, hqScore, hq);
-        imported++;
+      if (!username) {
+        skipped++;
+        continue;
       }
-    });
 
-    insertMany();
+      if (seenUsernames.has(username)) {
+        duplicates++;
+        continue;
+      }
+      seenUsernames.add(username);
 
-    const totalLeads = (db.prepare('SELECT COUNT(*) as count FROM leads').get() as { count: number }).count;
+      const niche = nicheIdx >= 0 ? (cols[nicheIdx] || '').trim() : null;
+      const followersRange = followersIdx >= 0 ? (cols[followersIdx] || '').trim() : null;
+      const hqScore = accountIdx >= 0 ? parseFloat(cols[accountIdx]) || 0 : 0;
+      const hq = hqIdx >= 0 ? (cols[hqIdx] || '').toUpperCase() === 'TRUE' ? 1 : 0 : 0;
+
+      statements.push({
+        sql: `INSERT INTO leads (username, instagram_url, csv_niche, csv_followers_range, csv_hq_score, csv_hq, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+              ON CONFLICT(username) DO UPDATE SET
+                instagram_url = COALESCE(excluded.instagram_url, leads.instagram_url),
+                csv_niche = COALESCE(excluded.csv_niche, leads.csv_niche),
+                csv_followers_range = COALESCE(excluded.csv_followers_range, leads.csv_followers_range),
+                csv_hq_score = COALESCE(excluded.csv_hq_score, leads.csv_hq_score),
+                csv_hq = COALESCE(excluded.csv_hq, leads.csv_hq),
+                updated_at = datetime('now')`,
+        args: [username, url, niche, followersRange, hqScore, hq],
+      });
+      imported++;
+    }
+
+    // Run all upserts in a batch
+    if (statements.length > 0) {
+      // Turso batch limit is ~100 statements, chunk if needed
+      const CHUNK = 80;
+      for (let i = 0; i < statements.length; i += CHUNK) {
+        await dbBatch(statements.slice(i, i + CHUNK));
+      }
+    }
+
+    const totalRow = await getOne<{ count: number }>('SELECT COUNT(*) as count FROM leads');
+    const totalLeads = totalRow?.count ?? 0;
 
     return NextResponse.json({
       imported,

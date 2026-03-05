@@ -47,6 +47,7 @@ interface GenerateOptions {
   systemInstruction?: string;
   temperature?: number;
   maxOutputTokens?: number;
+  jsonMode?: boolean;  // if true, forces responseMimeType: application/json
 }
 
 interface StreamGenerateOptions extends GenerateOptions {
@@ -87,6 +88,7 @@ export async function generateWithFallback(options: GenerateOptions): Promise<st
             systemInstruction: options.systemInstruction,
             temperature: options.temperature ?? 0.7,
             maxOutputTokens: options.maxOutputTokens ?? 2048,
+            ...(options.jsonMode ? { responseMimeType: 'application/json' } : {}),
           },
         });
 

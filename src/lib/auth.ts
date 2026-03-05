@@ -1,26 +1,24 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { getDb } from '@/lib/db';
+import { execute, getOne } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'influencer-tracker-default-secret';
 const TOKEN_EXPIRY = '7d';
 
 export async function initDefaultUser() {
-  const db = getDb();
   const username = process.env.AUTH_USERNAME || 'admin';
   const password = process.env.AUTH_PASSWORD || 'admin123';
   
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const existing = await getOne('SELECT id FROM users WHERE username = ?', [username]);
   if (!existing) {
     const hash = await bcrypt.hash(password, 10);
-    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
+    await execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', [username, hash]);
   }
 }
 
 export async function authenticateUser(username: string, password: string): Promise<string | null> {
-  const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as { id: number; username: string; password_hash: string } | undefined;
+  const user = await getOne<{ id: number; username: string; password_hash: string }>('SELECT * FROM users WHERE username = ?', [username]);
   
   if (!user) return null;
   

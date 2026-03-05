@@ -1,3 +1,5 @@
+import { fetchProfileFromRapidAPI } from './rapidapi-client';
+
 const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
 
 interface GraphApiError {
@@ -140,22 +142,34 @@ export async function fetchProfileByUsername(username: string): Promise<{
     const url = `${GRAPH_API_BASE}/${accountId}?fields=business_discovery.username(${encodeURIComponent(username)}){${profileFields},media.limit(25){${mediaFields}}}&access_token=${token}`;
     
     console.log(`[Instagram] Fetching @${username}...`);
-    const response = await fetchWithRetry(url);
-    const data = await response.json();
+    try {
+      const response = await fetchWithRetry(url);
+      const data = await response.json();
 
-    if ((data as GraphApiError).error) {
-      const error = data as GraphApiError;
-      console.error(`[Instagram] API error for @${username}: [${error.error.code}] ${error.error.message}`);
-      if (error.error.code === 17 || error.error.code === 110) {
-        // User not found or invalid user
-        return null;
+      if ((data as GraphApiError).error) {
+        const error = data as GraphApiError;
+        console.error(`[Instagram] API error for @${username}: [${error.error.code}] ${error.error.message}`);
+        if (error.error.code === 17 || error.error.code === 110 || error.error.code === 4 || error.error.code === 32 || error.error.type === 'OAuthException') {
+          // Meta API failed for valid reason, fallback to RapidAPI
+          console.log(`[Instagram] Fallback triggered for @${username} due to API error.`);
+          const fallbackData = await fetchProfileFromRapidAPI(username);
+          if (fallbackData) return fallbackData;
+        }
+        if (error.error.code === 17 || error.error.code === 110) {
+          // User not found or invalid user via both APIs
+          return null;
+        }
+        throw new Error(error.error.message);
       }
-      throw new Error(error.error.message);
-    }
 
-    const result = data as GraphApiSearchResult;
-    const discovery = result.business_discovery;
-    if (!discovery) return null;
+      const result = data as GraphApiSearchResult;
+      const discovery = result.business_discovery;
+      
+      if (!discovery) {
+        console.log(`[Instagram] No business_discovery for @${username}, fallback to RapidAPI.`);
+        const fallbackData = await fetchProfileFromRapidAPI(username);
+        return fallbackData || null;
+      }
 
     const profile: GraphApiProfile = {
       id: discovery.id,
@@ -173,6 +187,13 @@ export async function fetchProfileByUsername(username: string): Promise<{
     const media: GraphApiMedia[] = discovery.media?.data || [];
 
     return { profile, media };
+    } catch (err: unknown) {
+      const error = err as Error;
+      console.error(`[Instagram] ⚠️ fetchWithRetry failed for @${username}: ${error.message}. Triggering fallback...`);
+      const fallbackData = await fetchProfileFromRapidAPI(username);
+      if (fallbackData) return fallbackData;
+      throw error; // if fallback also fails or isn't available
+    }
   });
 }
 

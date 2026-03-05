@@ -3,19 +3,17 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { AppShell } from '@/components/layout/app-shell';
-import { LoginForm } from '@/components/auth/login-form';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, checkAuth, setTheme } = useAppStore();
+  const { setTheme } = useAppStore();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    checkAuth();
     // Initialize theme
     const savedTheme = localStorage.getItem('theme') as 'dark' | 'light' | null;
     setTheme(savedTheme || 'dark');
     setMounted(true);
-  }, [checkAuth, setTheme]);
+  }, [setTheme]);
 
   if (!mounted) {
     return (
@@ -25,9 +23,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginForm />;
-  }
-
+  // Demo mode — no auth required, always show the app
   return <AppShell>{children}</AppShell>;
 }
