@@ -19,7 +19,6 @@ const navItems = [
   { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/leads', icon: Database, label: 'Leads' },
   { href: '/candidates', icon: Users, label: 'Candidates' },
-  { href: '/flow', icon: Activity, label: 'Data Flow' },
   { href: '/reports', icon: FileText, label: 'Reports' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ];

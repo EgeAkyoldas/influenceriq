@@ -517,10 +517,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                 <ScoreBar label="Authority Score" value={profile.authority_score} max={10} />
                 <ScoreBar label="Relevance" value={profile.relevance_score} max={100} />
                 <ScoreBar label="Audience Alignment" value={profile.audience_alignment} max={100} />
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Engagement Rate</span>
-                  <span className="text-sm font-medium">{profile.engagement_rate?.toFixed(2)}%</span>
-                </div>
+                <ScoreBar label="Engagement Rate" value={profile.engagement_rate ?? 0} max={15} suffix="%" />
               </div>
 
               {profile.content_summary && (
@@ -1092,14 +1089,14 @@ function EditorFloatingPanel({
 
 
 
-function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
+function ScoreBar({ label, value, max, suffix }: { label: string; value: number; max: number; suffix?: string }) {
   const safe = value ?? 0;
-  const pct = (safe / max) * 100;
+  const pct = Math.min((safe / max) * 100, 100);
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">{label}</span>
-        <span className="text-sm font-medium">{safe.toFixed(1)}/{max}</span>
+        <span className="text-sm font-medium">{suffix ? `${safe.toFixed(2)}${suffix}` : `${safe.toFixed(1)}/${max}`}</span>
       </div>
       <Progress value={pct} className="h-2" />
     </div>
