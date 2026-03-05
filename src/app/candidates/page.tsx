@@ -152,13 +152,13 @@ export default function CandidatesPage() {
   };
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto">
+    <div className="space-y-4">
       {/* Filters */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <Card>
           <CardContent className="pt-4 pb-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-0 w-full sm:w-auto sm:min-w-[200px]">
                 <Search className="w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search by username or name..."
@@ -172,7 +172,7 @@ export default function CandidatesPage() {
                 value={filters.cluster || 'all'}
                 onValueChange={v => setFilter('cluster', v === 'all' ? null : v)}
               >
-                <SelectTrigger className="w-[160px] h-9">
+                <SelectTrigger className="w-[130px] sm:w-[160px] h-9">
                   <Filter className="w-3 h-3 mr-1" />
                   <SelectValue placeholder="Cluster" />
                 </SelectTrigger>
@@ -192,7 +192,7 @@ export default function CandidatesPage() {
                 return (
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className={`h-9 gap-2 min-w-[180px] justify-start font-normal ${
+                      <Button variant="outline" size="sm" className={`h-9 gap-2 min-w-[140px] sm:min-w-[180px] justify-start font-normal ${
                         active ? active.color : 'text-muted-foreground'
                       }`}>
                         {active ? (
@@ -231,7 +231,7 @@ export default function CandidatesPage() {
                 value={filters.tier || 'all'}
                 onValueChange={v => setFilter('tier', v === 'all' ? null : v)}
               >
-                <SelectTrigger className="w-[120px] h-9">
+                <SelectTrigger className="w-[100px] sm:w-[120px] h-9">
                   <SelectValue placeholder="Tier" />
                 </SelectTrigger>
                 <SelectContent>
@@ -259,7 +259,7 @@ export default function CandidatesPage() {
       {/* Table / Analytics Card */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <Card>
-          <CardHeader className="pb-0 flex flex-row items-center justify-between">
+          <CardHeader className="pb-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <CardTitle className="text-base">Candidate Pool</CardTitle>
             {/* View toggle */}
             <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">

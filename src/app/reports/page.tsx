@@ -47,7 +47,7 @@ export default function ReportsPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-6">
         {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-60 rounded-xl" />)}
       </div>
     );
@@ -56,7 +56,7 @@ export default function ReportsPage() {
   const totalAnalyzed = data?.stats?.analyzedProfiles || 0;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
         <Card>
           <CardHeader>

@@ -293,7 +293,7 @@ function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void })
   const colors = GROUP_COLORS[node.group];
 
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-[380px] bg-zinc-900/95 backdrop-blur-xl border-l border-zinc-700 p-6 overflow-y-auto z-20"
+    <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[380px] bg-zinc-900/95 backdrop-blur-xl border-l border-zinc-700 p-4 sm:p-6 overflow-y-auto z-20"
       style={{ borderLeftColor: colors.glow + '40' }}>
       <button onClick={onClose} className="absolute top-4 right-4 text-zinc-400 hover:text-white text-lg">✕</button>
 
@@ -446,19 +446,19 @@ export default function FlowPage() {
   return (
     <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden">
       {/* Header Bar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shrink-0">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 sm:px-6 py-3 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-sm shrink-0 gap-2">
         <div className="flex items-center gap-3">
           <Activity size={20} className="text-violet-400" />
-          <h1 className="text-lg font-bold">Data Flow Pipeline</h1>
-          <span className="flex items-center gap-1.5 text-xs text-zinc-500 px-2 py-0.5 bg-zinc-800 rounded-full">
+          <h1 className="text-base sm:text-lg font-bold">Data Flow Pipeline</h1>
+          <span className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-500 px-2 py-0.5 bg-zinc-800 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             {nodes.length} nodes · {EDGES.length} connections
             {lastUpdated && <span className="ml-1 text-zinc-600">· {lastUpdated.toLocaleTimeString()}</span>}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Legend */}
-          <div className="flex items-center gap-3 mr-4">
+          {/* Legend — hidden on mobile */}
+          <div className="hidden lg:flex items-center gap-3 mr-4">
             {legendItems.map(l => (
               <div key={l.label} className="flex items-center gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: l.color }} />
@@ -536,7 +536,7 @@ export default function FlowPage() {
         )}
 
         {/* Zoom hint */}
-        <div className="absolute bottom-4 left-4 text-xs text-zinc-600 select-none pointer-events-none">
+        <div className="absolute bottom-4 left-4 text-[10px] sm:text-xs text-zinc-600 select-none pointer-events-none">
           Scroll to zoom · Drag to pan · Click node for details
         </div>
       </div>

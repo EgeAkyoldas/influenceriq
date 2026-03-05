@@ -1,5 +1,4 @@
-import { getOne, getAll, execute } from '@/lib/db';
-import { type InValue } from '@libsql/client';
+import { getOne, getAll, execute, type InValue } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {

@@ -71,7 +71,7 @@ export default function DashboardPage() {
   const stats = dashboardStats?.stats;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {loading ? (
@@ -188,9 +188,9 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground text-center py-4">No research yet. Start one above!</p>
               ) : (
                 researches.slice(0, 5).map(r => (
-                  <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium truncate max-w-[200px]">
+                  <div key={r.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0 p-3 rounded-lg bg-muted/50 border border-border/50">
+                    <div className="space-y-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
                         {r.seed_value.substring(0, 40)}{r.seed_value.length > 40 ? '...' : ''}
                       </p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -264,7 +264,7 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                 {dashboardStats.topProfiles.map((p, i) => (
                   <div
                     key={p.username}

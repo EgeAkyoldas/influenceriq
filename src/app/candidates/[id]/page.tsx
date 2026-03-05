@@ -345,9 +345,9 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-6">
         <Skeleton className="h-40 rounded-xl" />
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Skeleton className="h-60 rounded-xl" />
           <Skeleton className="h-60 rounded-xl" />
         </div>
@@ -367,7 +367,7 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
   const combo = getCombo(profile.primary_cluster, profile.secondary_cluster);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* Back Button */}
       <Link href="/candidates">
         <Button variant="ghost" size="sm" className="gap-1">
@@ -435,10 +435,10 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                 </div>
 
                 {profile.full_name && <p className="text-muted-foreground">{profile.full_name}</p>}
-                {profile.bio && <p className="text-sm max-w-lg">{profile.bio}</p>}
+                {profile.bio && <p className="text-sm max-w-full">{profile.bio}</p>}
 
                 {/* Stats */}
-                <div className="flex items-center gap-6 text-sm">
+                <div className="flex items-center flex-wrap gap-4 sm:gap-6 text-sm">
                   <div className="flex items-center gap-1.5">
                     <Users className="w-4 h-4 text-muted-foreground" />
                     <span className="font-medium">{profile.followers_count.toLocaleString()}</span>
@@ -721,7 +721,7 @@ function EditorFloatingPanel({
   // reverifyOpen is now controlled by parent; auto-opened via onReverify prop wrapper
 
   return (
-    <div className="fixed bottom-24 right-6 z-40 flex flex-col items-end gap-3">
+    <div className="fixed bottom-24 right-4 sm:right-6 z-40 flex flex-col items-end gap-3">
       {/* ─── Reverify Panel ─── */}
       <AnimatePresence>
         {(reverifyOpen || reverifying) && (
@@ -730,7 +730,7 @@ function EditorFloatingPanel({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.95 }}
             transition={{ type: 'spring', damping: 26, stiffness: 300 }}
-            className="w-[320px] bg-card border border-violet-500/25 rounded-2xl shadow-2xl overflow-hidden"
+            className="w-[calc(100vw-2rem)] sm:w-[320px] bg-card border border-violet-500/25 rounded-2xl shadow-2xl overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-violet-950/20">
               <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -7,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, FileText, Settings,
   Moon, Sun, PanelLeftClose, PanelLeftOpen,
-  Database, Activity, Search,
+  Database, Activity, Menu, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -26,37 +27,66 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useAppStore();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const logoSrc = theme === 'dark' ? '/lionalyze-light.png' : '/lionalyze-dark.png';
 
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Close mobile menu on resize to desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) setMobileOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <>
-      {/* Mobile overlay */}
+      {/* Mobile overlay backdrop */}
       <AnimatePresence>
-        {sidebarOpen && (
+        {mobileOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-            onClick={toggleSidebar}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+            onClick={() => setMobileOpen(false)}
           />
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: sidebarOpen ? 240 : 72 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed left-0 top-0 bottom-0 z-50 bg-card border-r border-border flex flex-col overflow-hidden"
+      {/* Mobile hamburger button — fixed in header area */}
+      <button
+        className="fixed top-4 left-4 z-51 lg:hidden p-2 rounded-lg bg-card border border-border shadow-lg hover:bg-muted transition-colors"
+        onClick={() => setMobileOpen(!mobileOpen)}
+        aria-label="Toggle menu"
       >
-        {/* ── Logo area ──────────────────────────────────────────────────────
-            Icon slot is fixed 36×36 — position never shifts between states.
-            When open, "LIONALYZE" fades in beside it. No collapse button here.
-        ─────────────────────────────────────────────────────────────────── */}
+        {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+      </button>
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed left-0 top-0 bottom-0 z-50
+          bg-card border-r border-border flex flex-col overflow-hidden
+          transition-all duration-300 ease-in-out
+          
+          /* Mobile: slide in/out based on mobileOpen */
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+          w-[260px]
+          
+          /* Desktop: always visible, controlled by sidebarOpen for expand/collapse */
+          lg:translate-x-0
+          ${sidebarOpen ? 'lg:w-[240px]' : 'lg:w-[72px]'}
+        `}
+      >
+        {/* Logo area */}
         <div className="h-16 flex items-center px-3 border-b border-border shrink-0 gap-2 overflow-hidden">
-          {/* Fixed icon slot */}
           <div
             className="shrink-0 overflow-hidden"
             style={{ width: 36, height: 36, position: 'relative' }}
@@ -75,9 +105,9 @@ export function Sidebar() {
             />
           </div>
 
-          {/* Site name — appears only when sidebar is open */}
+          {/* Show label: always on mobile (when open), conditionally on desktop */}
           <AnimatePresence>
-            {sidebarOpen && (
+            {(sidebarOpen || mobileOpen) && (
               <motion.span
                 key="site-name"
                 initial={{ opacity: 0, x: -10 }}
@@ -92,17 +122,21 @@ export function Sidebar() {
           </AnimatePresence>
         </div>
 
-        {/* ── Navigation ─────────────────────────────────────────────────── */}
+        {/* Navigation */}
         <nav className="flex-1 py-4 space-y-1 px-2">
           {navItems.map(item => {
             const isActive =
               pathname === item.href ||
               (item.href !== '/' && pathname.startsWith(item.href));
+
+            const showLabel = sidebarOpen || mobileOpen;
+
             return (
               <Tooltip key={item.href} delayDuration={0}>
                 <TooltipTrigger asChild>
                   <Link
                     href={item.href}
+                    onClick={() => setMobileOpen(false)}
                     className={`
                       flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all
                       ${isActive
@@ -113,7 +147,7 @@ export function Sidebar() {
                   >
                     <item.icon className="w-5 h-5 shrink-0" />
                     <AnimatePresence mode="wait">
-                      {sidebarOpen && (
+                      {showLabel && (
                         <motion.span
                           initial={{ opacity: 0, width: 0 }}
                           animate={{ opacity: 1, width: 'auto' }}
@@ -126,7 +160,7 @@ export function Sidebar() {
                     </AnimatePresence>
                   </Link>
                 </TooltipTrigger>
-                {!sidebarOpen && (
+                {!showLabel && (
                   <TooltipContent side="right">{item.label}</TooltipContent>
                 )}
               </Tooltip>
@@ -134,7 +168,7 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* ── Bottom actions ─────────────────────────────────────────────── */}
+        {/* Bottom actions */}
         <div className="p-2 border-t border-border space-y-1">
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -147,40 +181,43 @@ export function Sidebar() {
                   ? <Sun className="w-5 h-5" />
                   : <Moon className="w-5 h-5" />
                 }
-                {sidebarOpen && (
+                {(sidebarOpen || mobileOpen) && (
                   <span className="text-sm">
                     {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                   </span>
                 )}
               </Button>
             </TooltipTrigger>
-            {!sidebarOpen && <TooltipContent side="right">Toggle Theme</TooltipContent>}
-          </Tooltip>
-
-
-          {/* Collapse / Expand — pinned at the very bottom of the sidebar */}
-          <Tooltip delayDuration={0}>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                onClick={toggleSidebar}
-                className="w-full justify-start gap-3 px-3 h-9"
-              >
-                {sidebarOpen
-                  ? <PanelLeftClose className="w-4 h-4 shrink-0" />
-                  : <PanelLeftOpen className="w-4 h-4 shrink-0" />
-                }
-                {sidebarOpen && (
-                  <span className="text-sm text-muted-foreground">Collapse</span>
-                )}
-              </Button>
-            </TooltipTrigger>
-            {!sidebarOpen && (
-              <TooltipContent side="right">Expand sidebar</TooltipContent>
+            {!sidebarOpen && !mobileOpen && (
+              <TooltipContent side="right">Toggle Theme</TooltipContent>
             )}
           </Tooltip>
+
+          {/* Collapse / Expand — desktop only */}
+          <div className="hidden lg:block">
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  onClick={toggleSidebar}
+                  className="w-full justify-start gap-3 px-3 h-9"
+                >
+                  {sidebarOpen
+                    ? <PanelLeftClose className="w-4 h-4 shrink-0" />
+                    : <PanelLeftOpen className="w-4 h-4 shrink-0" />
+                  }
+                  {sidebarOpen && (
+                    <span className="text-sm text-muted-foreground">Collapse</span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              {!sidebarOpen && (
+                <TooltipContent side="right">Expand sidebar</TooltipContent>
+              )}
+            </Tooltip>
+          </div>
         </div>
-      </motion.aside>
+      </aside>
     </>
   );
 }
@@ -196,13 +233,16 @@ export function Header() {
 
   return (
     <header
-      className="h-16 border-b border-border flex items-center px-6 bg-card/80 backdrop-blur-sm sticky top-0 z-30"
-      style={{ marginLeft: sidebarOpen ? 240 : 72 }}
+      className={`
+        h-16 border-b border-border flex items-center
+        pl-16 pr-4 sm:pr-6
+        lg:pl-6
+        bg-card/80 backdrop-blur-sm sticky top-0 z-30
+        transition-all duration-300
+        ${sidebarOpen ? 'lg:ml-[240px]' : 'lg:ml-[72px]'}
+      `}
     >
-      <div className="flex items-center gap-3">
-        <Search className="w-4 h-4 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">{pageTitle}</h1>
-      </div>
+      <h1 className="text-lg font-semibold">{pageTitle}</h1>
     </header>
   );
 }
@@ -216,8 +256,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <Header />
       <main
-        className="transition-all duration-300 p-6"
-        style={{ marginLeft: sidebarOpen ? 240 : 72 }}
+        className={`
+          transition-all duration-300 p-4 sm:p-6
+          ${sidebarOpen ? 'lg:ml-[240px]' : 'lg:ml-[72px]'}
+        `}
       >
         {children}
       </main>

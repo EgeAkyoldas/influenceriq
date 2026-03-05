@@ -97,11 +97,11 @@ export default function LeadsPage() {
       if (hqOnly) params.set('hq_only', 'true');
 
       const res = await fetch(`/api/leads?${params}`);
-      const data: LeadsResponse = await res.json();
-      setLeads(data.data);
-      setPagination(data.pagination);
-      setNiches(data.filters.niches);
-      setStatusCounts(data.filters.statusCounts);
+      const data = await res.json();
+      if (data.data) setLeads(data.data);
+      if (data.pagination) setPagination(data.pagination);
+      if (data.filters?.niches) setNiches(data.filters.niches);
+      if (data.filters?.statusCounts) setStatusCounts(data.filters.statusCounts);
     } catch (err) {
       console.error('Failed to fetch leads:', err);
     }
@@ -221,19 +221,19 @@ export default function LeadsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold bg-linear-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl sm:text-3xl font-bold bg-linear-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
             Lead Management
           </h1>
-          <p className="text-zinc-400 mt-1">Import CSV, fetch profiles, classify and manage leads</p>
+          <p className="text-zinc-400 mt-1 text-sm sm:text-base">Import CSV, fetch profiles, classify and manage leads</p>
         </div>
-        <div className="flex gap-3">
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg hover:bg-zinc-700 transition-colors text-sm">
+        <div className="flex gap-2 sm:gap-3">
+          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg hover:bg-zinc-700 transition-colors text-sm">
             <Plus size={16} /> Add Lead
           </button>
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors text-sm font-medium">
+          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors text-sm font-medium">
             <Upload size={16} /> Import CSV
           </button>
           <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleCSVUpload(e.target.files[0]); e.target.value = ''; }} />
@@ -242,14 +242,14 @@ export default function LeadsPage() {
 
       {/* Import Result */}
       {importResult && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 flex items-center justify-between">
-          <div className="flex gap-6 text-sm">
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-3 sm:gap-6 text-sm">
             <span className="text-emerald-400 font-semibold">✓ Import Complete</span>
             <span>Imported: <strong>{importResult.imported}</strong></span>
-            <span>CSV Duplicates Skipped: <strong>{importResult.duplicates_in_csv}</strong></span>
-            <span>Total in DB: <strong>{importResult.total_leads_in_db}</strong></span>
+            <span>Duplicates: <strong>{importResult.duplicates_in_csv}</strong></span>
+            <span>Total: <strong>{importResult.total_leads_in_db}</strong></span>
           </div>
-          <button onClick={() => setImportResult(null)} className="text-zinc-400 hover:text-white"><X size={16} /></button>
+          <button onClick={() => setImportResult(null)} className="text-zinc-400 hover:text-white shrink-0"><X size={16} /></button>
         </div>
       )}
       {importing && (
@@ -274,7 +274,7 @@ export default function LeadsPage() {
           <div className="w-full bg-zinc-800 rounded-full h-2.5">
             <div className="bg-linear-to-r from-violet-500 to-cyan-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${batchJob.total_leads > 0 ? (batchJob.processed / batchJob.total_leads) * 100 : 0}%` }} />
           </div>
-          <div className="flex gap-6 mt-3 text-sm text-zinc-400">
+          <div className="flex flex-wrap gap-3 sm:gap-6 mt-3 text-sm text-zinc-400">
             <span>✓ Fetched: <strong className="text-emerald-400">{batchJob.fetched}</strong></span>
             <span>✗ Unfetchable: <strong className="text-zinc-300">{batchJob.unfetchable}</strong></span>
             <span>⚠ Errors: <strong className="text-red-400">{batchJob.errors}</strong></span>
@@ -283,19 +283,19 @@ export default function LeadsPage() {
       )}
 
       {/* Stats Bar */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
         {statusCounts.map(s => (
           <button key={s.fetch_status} onClick={() => setStatusFilter(statusFilter === s.fetch_status ? '' : s.fetch_status)}
-            className={`p-3 rounded-lg border text-center transition-all ${statusFilter === s.fetch_status ? 'ring-2 ring-violet-500' : ''} ${STATUS_COLORS[s.fetch_status] || 'bg-zinc-800 border-zinc-700'}`}>
-            <div className="text-2xl font-bold">{s.count}</div>
-            <div className="text-xs uppercase tracking-wider mt-1">{s.fetch_status}</div>
+            className={`p-2.5 sm:p-3 rounded-lg border text-center transition-all ${statusFilter === s.fetch_status ? 'ring-2 ring-violet-500' : ''} ${STATUS_COLORS[s.fetch_status] || 'bg-zinc-800 border-zinc-700'}`}>
+            <div className="text-xl sm:text-2xl font-bold">{s.count}</div>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider mt-1">{s.fetch_status}</div>
           </button>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-0 w-full sm:w-auto sm:min-w-[200px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username or niche..."
             className="w-full pl-10 pr-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm" />
@@ -441,8 +441,8 @@ export default function LeadsPage() {
 
       {/* Add Lead Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAddModal(false)}>
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-[400px]" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowAddModal(false)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-[400px]" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Add Lead</h3>
             <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="Instagram username"
               className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 mb-4"

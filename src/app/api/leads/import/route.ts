@@ -1,5 +1,4 @@
-import { getOne, batch as dbBatch } from '@/lib/db';
-import { type InValue } from '@libsql/client';
+import { getOne, batch as dbBatch, type InValue } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 function extractUsername(url: string): string | null {
