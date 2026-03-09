@@ -409,13 +409,27 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
               {/* Avatar */}
-              <div className="w-20 h-20 rounded-2xl bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                {profile.profile_pic_url ? (
+              <div className="w-20 h-20 rounded-2xl bg-muted flex items-center justify-center overflow-hidden shrink-0 relative">
+                {profile.profile_pic_url && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={profile.profile_pic_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-2xl font-bold">{profile.username[0]?.toUpperCase()}</span>
+                  <img
+                    src={profile.profile_pic_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      target.style.display = 'none';
+                      const fallback = target.nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                  />
                 )}
+                <span
+                  className="text-2xl font-bold flex items-center justify-center w-full h-full"
+                  style={{ display: profile.profile_pic_url ? 'none' : 'flex' }}
+                >
+                  {profile.username[0]?.toUpperCase()}
+                </span>
               </div>
 
               {/* Info */}

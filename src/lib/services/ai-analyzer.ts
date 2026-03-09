@@ -36,7 +36,7 @@ export async function analyzeProfile(data: ClassifierInput): Promise<Classificat
     const text = await generateWithFallback({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       temperature: 0.3,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 4096,
       jsonMode: true,  // Force valid JSON output from Gemini
     });
 

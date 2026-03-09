@@ -11,7 +11,7 @@ export type InValue = string | number | null | boolean | Uint8Array;
 
 interface TursoResult {
   cols: Array<{ name: string; decltype: string | null }>;
-  rows: Array<Array<{ type: string; value: string | null }>>;
+  rows: Array<Array<{ type: string; value: string | number | null }>>;
   affected_row_count: number;
   last_insert_rowid: string | null;
 }
@@ -46,29 +46,29 @@ function getConfig() {
   return { httpUrl, authToken };
 }
 
-function serializeArgs(args: InValue[]): Array<{ type: string; value: string | null }> {
+function serializeArgs(args: InValue[]): Array<{ type: string; value: string | number | null }> {
   return args.map(a => {
     if (a === null || a === undefined) return { type: 'null', value: null };
     if (typeof a === 'number') {
       return Number.isInteger(a) 
         ? { type: 'integer', value: String(a) }
-        : { type: 'float', value: String(a) };
+        : { type: 'float', value: a };
     }
     if (typeof a === 'boolean') return { type: 'integer', value: a ? '1' : '0' };
     return { type: 'text', value: String(a) };
   });
 }
 
-function rowToObject(cols: Array<{ name: string }>, row: Array<{ type: string; value: string | null }>): Record<string, unknown> {
+function rowToObject(cols: Array<{ name: string }>, row: Array<{ type: string; value: string | number | null }>): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
   for (let i = 0; i < cols.length; i++) {
     const cell = row[i];
     if (cell.type === 'null' || cell.value === null) {
       obj[cols[i].name] = null;
     } else if (cell.type === 'integer') {
-      obj[cols[i].name] = parseInt(cell.value, 10);
+      obj[cols[i].name] = parseInt(String(cell.value), 10);
     } else if (cell.type === 'float') {
-      obj[cols[i].name] = parseFloat(cell.value);
+      obj[cols[i].name] = typeof cell.value === 'number' ? cell.value : parseFloat(String(cell.value));
     } else {
       obj[cols[i].name] = cell.value;
     }
@@ -77,7 +77,7 @@ function rowToObject(cols: Array<{ name: string }>, row: Array<{ type: string; v
 }
 
 type PipelineRequest = 
-  | { type: 'execute'; stmt: { sql: string; args?: Array<{ type: string; value: string | null }> } }
+  | { type: 'execute'; stmt: { sql: string; args?: Array<{ type: string; value: string | number | null }> } }
   | { type: 'close' };
 
 async function pipeline(requests: PipelineRequest[]): Promise<TursoPipelineResponse> {

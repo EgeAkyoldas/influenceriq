@@ -323,13 +323,27 @@ export default function CandidatesPage() {
                         <TableRow key={p.id} className="hover:bg-muted/50 transition-colors">
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                                {p.profile_pic_url ? (
+                              <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden relative">
+                                {p.profile_pic_url && (
                                   // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={p.profile_pic_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="text-sm font-medium">{p.username[0]?.toUpperCase()}</span>
+                                  <img
+                                    src={p.profile_pic_url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      const target = e.currentTarget;
+                                      target.style.display = 'none';
+                                      const fallback = target.nextElementSibling as HTMLElement;
+                                      if (fallback) fallback.style.display = 'flex';
+                                    }}
+                                  />
                                 )}
+                                <span
+                                  className="text-sm font-medium flex items-center justify-center w-full h-full"
+                                  style={{ display: p.profile_pic_url ? 'none' : 'flex' }}
+                                >
+                                  {p.username[0]?.toUpperCase()}
+                                </span>
                               </div>
                               <div>
                                 <div className="flex items-center gap-1.5">

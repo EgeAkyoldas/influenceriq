@@ -52,9 +52,9 @@ export async function POST(
       `, [
         profileId,
         currentAnalysis.primary_cluster, currentAnalysis.secondary_cluster,
-        currentAnalysis.relevance_score, currentAnalysis.authority_score,
-        currentAnalysis.engagement_rate, currentAnalysis.monetization_signals,
-        currentAnalysis.audience_alignment, currentAnalysis.tier, currentAnalysis.tier_reason,
+        Number(currentAnalysis.relevance_score) || 0, Number(currentAnalysis.authority_score) || 0,
+        Number(currentAnalysis.engagement_rate) || 0, currentAnalysis.monetization_signals,
+        Number(currentAnalysis.audience_alignment) || 0, currentAnalysis.tier, currentAnalysis.tier_reason,
         currentAnalysis.content_style, currentAnalysis.content_summary,
         currentAnalysis.is_approved, currentAnalysis.rejection_reason
       ]);

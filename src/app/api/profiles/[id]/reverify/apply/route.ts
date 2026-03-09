@@ -26,6 +26,11 @@ export async function POST(
       rejection_reason: string | null;
     };
 
+    // Coerce numeric scores to actual numbers (AI/frontend may send strings like "8.5")
+    const relevanceScore = Number(body.relevance_score) || 0;
+    const authorityScore = Number(body.authority_score) || 0;
+    const audienceAlignment = Number(body.audience_alignment) || 0;
+
     // Check if a row already exists
     const existing = await getOne('SELECT profile_id FROM analysis_results WHERE profile_id = ?', [profileId]);
 
@@ -53,11 +58,11 @@ export async function POST(
       `, [
         profileId,
         body.primary_cluster, body.secondary_cluster ?? null,
-        body.relevance_score, body.authority_score,
+        relevanceScore, authorityScore,
         engagementRate,
         JSON.stringify(body.monetization_signals ?? []),
         JSON.stringify(body.risk_flags ?? []),
-        body.audience_alignment,
+        audienceAlignment,
         body.tier, body.tier_reason ?? '',
         body.content_summary || '',
         body.content_style || 'Mixed',
@@ -96,11 +101,11 @@ export async function POST(
       `, [
         body.primary_cluster,
         body.secondary_cluster ?? null,
-        body.relevance_score, body.relevance_score,
-        body.authority_score, body.authority_score,
+        relevanceScore, relevanceScore,
+        authorityScore, authorityScore,
         JSON.stringify(body.monetization_signals ?? []), JSON.stringify(body.monetization_signals ?? []),
         JSON.stringify(body.risk_flags ?? []), JSON.stringify(body.risk_flags ?? []),
-        body.audience_alignment, body.audience_alignment,
+        audienceAlignment, audienceAlignment,
         body.tier,
         body.tier_reason ?? '', body.tier_reason ?? '',
         body.content_summary ?? '',
