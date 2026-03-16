@@ -1,6 +1,5 @@
 import { GraphApiProfile, GraphApiMedia } from './instagram-client';
-import fs from 'fs';
-import path from 'path';
+import { execute } from '@/lib/db';
 
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'instagram-scraper-stable-api.p.rapidapi.com';
 
@@ -8,28 +7,22 @@ async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function downloadAvatar(url: string, username: string): Promise<string> {
+async function downloadAndStoreAvatar(url: string, username: string): Promise<string> {
   if (!url) return '';
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to fetch image: ${res.statusText}`);
     
-    // Convert to buffer
     const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
     
-    // Setup paths
-    const publicDir = path.join(process.cwd(), 'public', 'avatars');
-    if (!fs.existsSync(publicDir)) {
-      fs.mkdirSync(publicDir, { recursive: true });
-    }
+    // Store base64 avatar data in DB
+    await execute(
+      `UPDATE profiles SET avatar_data = ? WHERE username = ?`,
+      [base64, username]
+    );
     
-    const fileName = `${username}.jpg`;
-    const fullPath = path.join(publicDir, fileName);
-    
-    // Save to disk
-    fs.writeFileSync(fullPath, buffer);
-    return `/avatars/${fileName}`; // Return relative path for web usage
+    return `/api/avatars/${username}`;
   } catch (error) {
     console.error(`[RapidAPI] ⚠️ Failed to download avatar for @${username}`, error);
     return url; // Fallback to raw URL if download fails
@@ -89,7 +82,7 @@ export async function fetchProfileFromRapidAPI(username: string): Promise<{
 
     // Attempt to download local profile picture
     const originalPicUrl = userData.hd_profile_pic_url_info?.url || userData.profile_pic_url || '';
-    const localPicUrl = await downloadAvatar(originalPicUrl, username);
+    const localPicUrl = await downloadAndStoreAvatar(originalPicUrl, username);
 
     const profile: GraphApiProfile = {
       id: userData.id?.toString() || '',

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   following_count INTEGER DEFAULT 0,
   media_count INTEGER DEFAULT 0,
   profile_pic_url TEXT DEFAULT '',
+  avatar_data TEXT DEFAULT NULL,
   website TEXT DEFAULT '',
   is_verified INTEGER DEFAULT 0,
   fetched_at TEXT DEFAULT (datetime('now')),

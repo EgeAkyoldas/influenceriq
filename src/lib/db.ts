@@ -205,6 +205,16 @@ async function ensureSchema() {
       // Column already exists — ignore
     }
 
+    // Migration: add avatar_data column to profiles (base64 image storage)
+    try {
+      await pipeline([
+        { type: 'execute', stmt: { sql: `ALTER TABLE profiles ADD COLUMN avatar_data TEXT DEFAULT NULL`, args: [] } },
+        { type: 'close' },
+      ]);
+    } catch {
+      // Column already exists — ignore
+    }
+
     // Default settings
     const settingRequests: PipelineRequest[] = [
       { type: 'execute', stmt: { sql: `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, args: serializeArgs(['min_followers', '5000']) } },
