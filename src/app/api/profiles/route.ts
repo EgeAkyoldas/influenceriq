@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
     const sortColumn =
       safeSortBy === 'username' || safeSortBy === 'followers_count' ? `p.${safeSortBy}` :
       safeSortBy === 'is_approved' ? `COALESCE(a.is_approved, v.is_approved)` :
+      safeSortBy === 'lead_source' ? `l.source` :
       `a.${safeSortBy}`;
 
     const countQuery = `

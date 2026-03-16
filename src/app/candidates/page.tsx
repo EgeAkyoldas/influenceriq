@@ -337,7 +337,9 @@ export default function CandidatesPage() {
                         <span className="flex items-center">Archetype <SortIcon col="primary_cluster" /></span>
                       </TableHead>
                       <TableHead>Tier</TableHead>
-                      <TableHead>Source</TableHead>
+                      <TableHead className="cursor-pointer" onClick={() => handleSort('lead_source')}>
+                        <span className="flex items-center">Source <SortIcon col="lead_source" /></span>
+                      </TableHead>
                       <TableHead className="cursor-pointer" onClick={() => handleSort('is_approved')}>
                         <span className="flex items-center">Status <SortIcon col="is_approved" /></span>
                       </TableHead>
