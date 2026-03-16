@@ -54,11 +54,17 @@ function estimateEnglishContent(captions: string[]): number {
 
   let englishCaptions = 0;
   for (const caption of captions) {
-    const cleanText = caption.replace(/[#@\d\s.,!?'"()\-—…:;]/g, '');
+    // 1. Strip common symbols, numbers, and punctuation
+    let cleanText = caption.replace(/[#@\d\s.,!?'"()\-—…:;/\\&|~*[\]{}]/g, '');
+    // 2. Safely strip Emojis and extended pictographics (requires /gu flag)
+    cleanText = cleanText.replace(/[\p{Emoji}\p{Extended_Pictographic}\p{Symbol}\u200B-\u200D\uFEFF]/gu, '');
+
     if (cleanText.length === 0) {
       englishCaptions++;
       continue;
     }
+    
+    // Count remaining standard English letters (a-z, A-Z) vs all remaining letters
     const asciiChars = cleanText.split('').filter(c => c.charCodeAt(0) < 128).length;
     const ratio = asciiChars / cleanText.length;
     if (ratio > 0.7) englishCaptions++;

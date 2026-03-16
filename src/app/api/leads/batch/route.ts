@@ -106,14 +106,16 @@ async function processBatch(batchId: number) {
 
         if (analysis) {
           await execute(
-            `INSERT INTO analysis_results (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score, engagement_rate, monetization_signals, content_style, audience_alignment, tier, tier_reason, content_summary, is_approved, rejection_reason)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO analysis_results (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score, engagement_rate, monetization_signals, risk_flags, dynamic_tags, content_style, audience_alignment, tier, tier_reason, content_summary, is_approved, rejection_reason)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(profile_id) DO UPDATE SET
                primary_cluster = excluded.primary_cluster, tier = excluded.tier,
                secondary_cluster = excluded.secondary_cluster,
                relevance_score = excluded.relevance_score,
                authority_score = excluded.authority_score,
                monetization_signals = excluded.monetization_signals,
+               risk_flags = excluded.risk_flags,
+               dynamic_tags = excluded.dynamic_tags,
                content_style = excluded.content_style,
                audience_alignment = excluded.audience_alignment,
                tier_reason = excluded.tier_reason,
@@ -125,6 +127,8 @@ async function processBatch(batchId: number) {
               profileId, analysis.primary_cluster, analysis.secondary_cluster || null,
               analysis.relevance_score || 0, analysis.authority_score || 0,
               engRate, JSON.stringify(analysis.monetization_signals || []),
+              JSON.stringify(analysis.risk_flags || []),
+              JSON.stringify(analysis.dynamic_tags || []),
               analysis.content_style || 'Mixed', analysis.audience_alignment || 0,
               analysis.tier || 'D', analysis.tier_reason || '', analysis.content_summary || '',
               analysis.is_approved ? 1 : 0, analysis.rejection_reason || null
@@ -153,6 +157,15 @@ async function processBatch(batchId: number) {
 
     } catch (err) {
       const msg = (err as Error).message;
+      
+      // Cybernetic Upgrade: Exponential/Fatal Backoff Handling
+      if (msg.includes('Rate Limit Exceeded') || msg.includes('429')) {
+        console.error(`[Batch] 🛑 Fatal Rate Limit encountered on @${lead.username}. Aborting batch job to protect API key.`);
+        // Revert current lead to pending and exit batch
+        await execute("UPDATE leads SET fetch_status = 'pending' WHERE id = ?", [lead.id]);
+        break;
+      }
+
       await execute(
         "UPDATE leads SET fetch_status = 'error', error_message = ?, updated_at = datetime('now') WHERE id = ?",
         [msg, lead.id]

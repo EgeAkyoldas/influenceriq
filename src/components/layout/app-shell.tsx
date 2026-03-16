@@ -38,6 +38,7 @@ export function Sidebar() {
   // Close mobile menu on resize to desktop
   useEffect(() => {
     const handleResize = () => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (window.innerWidth >= 1024) setMobileOpen(false);
     };
     window.addEventListener('resize', handleResize);

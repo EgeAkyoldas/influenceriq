@@ -9,7 +9,7 @@ import {
   Search, Filter, ChevronUp, ChevronDown, ExternalLink, ArrowUpDown,
   Flame, Drama, GitMerge, Swords, Zap, Crown, Layers, Mountain,
   Handshake, RefreshCw, BookOpen, HeartHandshake, Dumbbell, Sword, Anvil, TreePine,
-  BarChart2, LayoutList,
+  BarChart2, LayoutList, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,8 @@ interface ProfileRow {
   is_verified: boolean;
   is_approved: number | null;  // 0 = rejected, 1 = approved, null = not analyzed
   rejection_reason: string | null;
+  dynamic_tags: string[];
+  lead_source: string | null;
 }
 
 interface PaginationData {
@@ -91,6 +93,7 @@ export default function CandidatesPage() {
   const [view, setView] = useState<'table' | 'analytics'>('table');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [availableSources, setAvailableSources] = useState<Array<{ source: string; count: number }>>([]);
 
   const fetchProfiles = useCallback(async () => {
     setLoading(true);
@@ -100,15 +103,17 @@ export default function CandidatesPage() {
       if (filters.tier) params.set('tier', filters.tier);
       if (filters.archetype) params.set('archetype', filters.archetype);
       if (filters.search) params.set('search', filters.search);
+      if (filters.source) params.set('source', filters.source);
       params.set('sortBy', filters.sortBy);
       params.set('sortOrder', filters.sortOrder);
-      params.set('page', String(filters.page));
-      params.set('limit', '25');
+      params.set('page', String(filters.page || 1));
+      params.set('limit', String(filters.limit || 25));
 
       const res = await fetch(`/api/profiles?${params}`);
       const data = await res.json();
       setProfiles(data.data || []);
       setPagination(data.pagination || { page: 1, limit: 25, total: 0, totalPages: 0 });
+      if (data.sources) setAvailableSources(data.sources);
     } catch (e) {
       console.error('Profiles fetch error:', e);
     } finally {
@@ -244,6 +249,29 @@ export default function CandidatesPage() {
                 </SelectContent>
               </Select>
 
+              {/* Source filter */}
+              {availableSources.length > 1 && (
+                <Select
+                  value={filters.source || 'all'}
+                  onValueChange={v => setFilter('source', v === 'all' ? null : v)}
+                >
+                  <SelectTrigger className="w-[120px] sm:w-[160px] h-9">
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sources</SelectItem>
+                    {availableSources
+                      .filter(s => s.source != null)
+                      .filter((s, i, arr) => arr.findIndex(x => x.source === s.source) === i)
+                      .map(s => (
+                      <SelectItem key={s.source} value={s.source}>
+                        {s.source} ({s.count})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               <Button variant="ghost" size="sm" onClick={resetFilters}>
                 Reset
               </Button>
@@ -309,6 +337,7 @@ export default function CandidatesPage() {
                         <span className="flex items-center">Archetype <SortIcon col="primary_cluster" /></span>
                       </TableHead>
                       <TableHead>Tier</TableHead>
+                      <TableHead>Source</TableHead>
                       <TableHead className="cursor-pointer" onClick={() => handleSort('is_approved')}>
                         <span className="flex items-center">Status <SortIcon col="is_approved" /></span>
                       </TableHead>
@@ -322,8 +351,8 @@ export default function CandidatesPage() {
                       return (
                         <TableRow key={p.id} className="hover:bg-muted/50 transition-colors">
                           <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden relative">
+                            <Link href={`/candidates/${p.id}`} className="flex items-center gap-3 group cursor-pointer">
+                              <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden relative ring-1 ring-transparent group-hover:ring-primary/40 transition-all">
                                 {p.profile_pic_url && (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
@@ -347,16 +376,26 @@ export default function CandidatesPage() {
                               </div>
                               <div>
                                 <div className="flex items-center gap-1.5">
-                                  <p className="text-sm font-medium">@{p.username}</p>
+                                  <p className="text-sm font-medium group-hover:text-primary transition-colors">@{p.username}</p>
                                   {p.is_approved && (
                                     <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
                                       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                     </svg>
                                   )}
+                                  {p.lead_source && p.lead_source !== 'csv_import' && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-cyan-400 cursor-help shrink-0" />
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="px-2 py-1">
+                                        <p className="text-xs">Source: <span className="font-semibold text-cyan-300">{p.lead_source}</span></p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
                                 </div>
                                 {p.full_name && <p className="text-xs text-muted-foreground">{p.full_name}</p>}
                               </div>
-                            </div>
+                            </Link>
                           </TableCell>
                           <TableCell className="text-sm">{(p.followers_count || 0).toLocaleString()}</TableCell>
                           <TableCell>
@@ -378,6 +417,13 @@ export default function CandidatesPage() {
                                 <TooltipContent side="right" className="max-w-52 p-3 space-y-1">
                                   <p className="font-semibold text-sm">{combo.tag}</p>
                                   <p className="text-xs text-muted-foreground">{combo.description}</p>
+                                  {p.dynamic_tags?.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {p.dynamic_tags.map((t, i) => (
+                                        <Badge key={i} variant="outline" className="text-[9px] px-1 py-0 h-4 text-primary bg-primary/10 border-primary/20">{t}</Badge>
+                                      ))}
+                                    </div>
+                                  )}
                                 </TooltipContent>
                               </Tooltip>
                             ) : (
@@ -389,6 +435,25 @@ export default function CandidatesPage() {
                               <Badge variant="outline" className={`text-xs font-bold ${tierColors[p.tier] || ''}`}>
                                 {p.tier}
                               </Badge>
+                            )}
+                          </TableCell>
+                          {/* Source column */}
+                          <TableCell>
+                            {p.lead_source ? (
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 ${
+                                  p.lead_source === 'csv_import'
+                                    ? 'text-zinc-400 border-zinc-600'
+                                    : p.lead_source === 'manual'
+                                    ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                                    : 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10'
+                                }`}
+                              >
+                                {p.lead_source}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
                             )}
                           </TableCell>
                           {/* Approval Status — icon only */}
@@ -446,29 +511,63 @@ export default function CandidatesPage() {
                 </Table>
 
                 {/* Pagination */}
-                {pagination.totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
-                    <span className="text-sm text-muted-foreground">
-                      Page {pagination.page} of {pagination.totalPages}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 pt-4 border-t border-border">
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      Page {pagination.page} of {pagination.totalPages || 1}
                     </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline" size="sm"
-                        disabled={pagination.page <= 1}
-                        onClick={() => setFilter('page', pagination.page - 1)}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground hidden sm:inline">Rows per page</span>
+                      <Select
+                        value={String(filters.limit || 25)}
+                        onValueChange={(v) => {
+                          setFilter('limit', Number(v));
+                          setFilter('page', 1);
+                        }}
                       >
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline" size="sm"
-                        disabled={pagination.page >= pagination.totalPages}
-                        onClick={() => setFilter('page', pagination.page + 1)}
-                      >
-                        Next
-                      </Button>
+                        <SelectTrigger className="w-[70px] h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[10, 25, 50, 100].map(s => (
+                            <SelectItem key={s} value={String(s)}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                )}
+                  
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="outline" size="icon" className="h-8 w-8"
+                      disabled={pagination.page <= 1}
+                      onClick={() => setFilter('page', 1)}
+                    >
+                      <ChevronsLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline" size="icon" className="h-8 w-8"
+                      disabled={pagination.page <= 1}
+                      onClick={() => setFilter('page', pagination.page - 1)}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline" size="icon" className="h-8 w-8"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => setFilter('page', pagination.page + 1)}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline" size="icon" className="h-8 w-8"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => setFilter('page', pagination.totalPages)}
+                    >
+                      <ChevronsRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
               </>
             )}
           </CardContent>

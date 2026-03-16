@@ -12,7 +12,7 @@ interface Message {
   timestamp: Date;
 }
 
-// Panel (compact) → Fullscreen geçiş animasyon varyantları
+// Panel (compact) → Fullscreen transition animation variants
 const panelVariants = {
   hidden: { opacity: 0, y: 24, scale: 0.96 },
   visible: {
@@ -64,7 +64,7 @@ export function AIChat() {
     if (isOpen && inputRef.current) inputRef.current.focus();
   }, [isOpen]);
 
-  // Escape tuşuyla kapat
+  // Close on Escape key
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -76,7 +76,7 @@ export function AIChat() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isOpen, isFullscreen]);
 
-  // Fullscreen açıkken body scroll'unu kilitle
+  // Lock body scroll when fullscreen is open
   useEffect(() => {
     document.body.style.overflow = isFullscreen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -155,7 +155,7 @@ export function AIChat() {
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last && last.role === 'assistant' && !last.content) {
-          last.content = '⚠️ Bir hata oluştu. Lütfen tekrar deneyin.';
+          last.content = '⚠️ Something went wrong. Please try again.';
         }
         return updated;
       });
@@ -180,7 +180,7 @@ export function AIChat() {
 
   const toggleFullscreen = () => setIsFullscreen(prev => !prev);
 
-  // ── Paylaşımlı iç içerik ──────────────────────────────────────────────────
+  // ── Shared chat content ──────────────────────────────────────────────────
   const chatContent = (
     <>
       {/* Header */}
@@ -204,14 +204,14 @@ export function AIChat() {
           <button
             onClick={clearChat}
             className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
-            title="Sohbeti temizle"
+            title="Clear chat"
           >
             <Trash2 size={14} />
           </button>
           <button
             onClick={toggleFullscreen}
             className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
-            title={isFullscreen ? 'Küçült' : 'Tam ekran'}
+            title={isFullscreen ? 'Minimize' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
@@ -240,14 +240,14 @@ export function AIChat() {
             </div>
             <h4 className="text-base font-medium text-zinc-300 mb-1">IQ Assistant</h4>
             <p className="text-sm text-zinc-500 mb-6 max-w-sm">
-              Lead verileri, AI analizleri, pipeline durumu ve platform hakkında sorular sorabilirsin.
+              Ask about lead data, AI analyses, pipeline status, and platform insights.
             </p>
             <div className="grid grid-cols-1 gap-2 w-full max-w-sm">
               {[
-                'Kaç lead var ve durumları ne?',
-                'En iyi adaylar kimler?',
-                'Pipeline nasıl çalışıyor?',
-                'Tier dağılımını özetle',
+                'How many leads are there and what are their statuses?',
+                'Who are the top candidates?',
+                'Summarize the tier distribution',
+                'What sources do we have and how many leads from each?',
               ].map((q, i) => (
                 <button
                   key={i}
@@ -302,7 +302,7 @@ export function AIChat() {
         {isStreaming && (
           <div className="flex items-center gap-2 text-xs text-zinc-500 pl-8">
             <Loader2 size={12} className="animate-spin text-violet-400" />
-            <span>düşünüyor...</span>
+            <span>thinking...</span>
           </div>
         )}
       </div>
@@ -315,7 +315,7 @@ export function AIChat() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Bir soru sor..."
+            placeholder="Ask a question..."
             rows={1}
             className="flex-1 bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 resize-none outline-none max-h-[120px]"
             style={{ scrollbarWidth: 'none' }}

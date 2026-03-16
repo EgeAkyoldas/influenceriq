@@ -395,6 +395,7 @@ export default function FlowPage() {
 
   // Fetch on mount + every 10s
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchFlowData();
     const interval = setInterval(() => void fetchFlowData(), 10_000);
     return () => clearInterval(interval);

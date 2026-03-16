@@ -17,6 +17,7 @@ interface Lead {
   followers_count: number | null;
   full_name: string | null;
   profile_pic_url: string | null;
+  source: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,14 +34,6 @@ interface BatchJob {
   completed_at: string | null;
 }
 
-interface LeadsResponse {
-  data: Lead[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
-  filters: {
-    niches: Array<{ csv_niche: string; count: number }>;
-    statusCounts: Array<{ fetch_status: string; count: number }>;
-  };
-}
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -61,14 +54,28 @@ const NICHE_COLORS: Record<string, string> = {
   Other: 'bg-zinc-500/20 text-zinc-400',
 };
 
+const SOURCE_COLORS: Record<string, string> = {
+  csv_import: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+  manual: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+};
+
+function getSourceStyle(source: string | null): string {
+  if (!source) return SOURCE_COLORS.csv_import;
+  if (SOURCE_COLORS[source]) return SOURCE_COLORS[source];
+  // Date-based sources (e.g. '11 March') get a special cyan style
+  return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+};
+
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
   const [niches, setNiches] = useState<Array<{ csv_niche: string; count: number }>>([]);
   const [statusCounts, setStatusCounts] = useState<Array<{ fetch_status: string; count: number }>>([]);
+  const [sourceCounts, setSourceCounts] = useState<Array<{ source: string; count: number }>>([]);
   const [search, setSearch] = useState('');
   const [nicheFilter, setNicheFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [hqOnly, setHqOnly] = useState(false);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -79,6 +86,9 @@ export default function LeadsPage() {
   const [importing, setImporting] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importSource, setImportSource] = useState('11 March');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const batchPollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -94,6 +104,7 @@ export default function LeadsPage() {
       if (search) params.set('search', search);
       if (nicheFilter) params.set('niche', nicheFilter);
       if (statusFilter) params.set('fetch_status', statusFilter);
+      if (sourceFilter) params.set('source', sourceFilter);
       if (hqOnly) params.set('hq_only', 'true');
 
       const res = await fetch(`/api/leads?${params}`);
@@ -102,12 +113,14 @@ export default function LeadsPage() {
       if (data.pagination) setPagination(data.pagination);
       if (data.filters?.niches) setNiches(data.filters.niches);
       if (data.filters?.statusCounts) setStatusCounts(data.filters.statusCounts);
+      if (data.filters?.sourceCounts) setSourceCounts(data.filters.sourceCounts);
     } catch (err) {
       console.error('Failed to fetch leads:', err);
     }
     setLoading(false);
-  }, [search, nicheFilter, statusFilter, hqOnly, sortBy, sortDir]);
+  }, [search, nicheFilter, statusFilter, sourceFilter, hqOnly, sortBy, sortDir]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
   const fetchBatchStatus = useCallback(async () => {
@@ -123,14 +136,16 @@ export default function LeadsPage() {
     }
   }, [fetchLeads, pagination.page]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchBatchStatus();
     const interval = setInterval(fetchBatchStatus, 3000);
     batchPollRef.current = interval;
     return () => clearInterval(interval);
   }, [fetchBatchStatus]);
 
-  const handleCSVUpload = async (file: File) => {
+  const handleCSVUpload = async (file: File, source: string) => {
     setImporting(true);
     setImportResult(null);
     try {
@@ -138,7 +153,7 @@ export default function LeadsPage() {
       const res = await fetch('/api/leads/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv_data: text }),
+        body: JSON.stringify({ csv_data: text, source }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -151,6 +166,19 @@ export default function LeadsPage() {
       alert(`Import error: ${(err as Error).message}`);
     }
     setImporting(false);
+  };
+
+  const handleFileSelect = (file: File) => {
+    setPendingFile(file);
+    setShowImportDialog(true);
+  };
+
+  const confirmImport = () => {
+    if (pendingFile) {
+      handleCSVUpload(pendingFile, importSource);
+      setPendingFile(null);
+      setShowImportDialog(false);
+    }
   };
 
   const startBatch = async () => {
@@ -236,7 +264,7 @@ export default function LeadsPage() {
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors text-sm font-medium">
             <Upload size={16} /> Import CSV
           </button>
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleCSVUpload(e.target.files[0]); e.target.value = ''; }} />
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); e.target.value = ''; }} />
         </div>
       </div>
 
@@ -307,6 +335,10 @@ export default function LeadsPage() {
             {niches.map(n => <option key={n.csv_niche} value={n.csv_niche}>{n.csv_niche} ({n.count})</option>)}
           </select>
         </div>
+        <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500">
+          <option value="">All Sources</option>
+          {sourceCounts.map(s => <option key={s.source} value={s.source}>{s.source || 'unknown'} ({s.count})</option>)}
+        </select>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={hqOnly} onChange={e => setHqOnly(e.target.checked)} className="accent-violet-500" />
           HQ Only
@@ -351,15 +383,16 @@ export default function LeadsPage() {
                 <th className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('fetch_status')}>
                   Status {sortBy === 'fetch_status' && (sortDir === 'asc' ? '↑' : '↓')}
                 </th>
+                <th className="p-3">Source</th>
                 <th className="p-3">Live Followers</th>
                 <th className="p-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {loading ? (
-                <tr><td colSpan={8} className="p-12 text-center text-zinc-500"><RefreshCw size={24} className="inline animate-spin mr-2" /> Loading...</td></tr>
+                <tr><td colSpan={9} className="p-12 text-center text-zinc-500"><RefreshCw size={24} className="inline animate-spin mr-2" /> Loading...</td></tr>
               ) : leads.length === 0 ? (
-                <tr><td colSpan={8} className="p-12 text-center text-zinc-500">
+                <tr><td colSpan={9} className="p-12 text-center text-zinc-500">
                   <Download size={32} className="mx-auto mb-3 text-zinc-600" />
                   No leads found. Import a CSV to get started.
                 </td></tr>
@@ -398,6 +431,15 @@ export default function LeadsPage() {
                     <span className={`px-2 py-0.5 rounded-full text-xs border ${STATUS_COLORS[lead.fetch_status]}`}>
                       {lead.fetch_status}
                     </span>
+                  </td>
+                  <td className="p-3">
+                    {lead.source && lead.source !== 'csv_import' ? (
+                      <span className={`px-2 py-0.5 rounded-full text-xs border ${getSourceStyle(lead.source)}`}>
+                        🆕 {lead.source}
+                      </span>
+                    ) : (
+                      <span className="text-zinc-600 text-xs">—</span>
+                    )}
                   </td>
                   <td className="p-3 text-zinc-300 font-mono text-sm">
                     {lead.followers_count !== null ? lead.followers_count.toLocaleString() : '—'}
@@ -450,6 +492,24 @@ export default function LeadsPage() {
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowAddModal(false)} className="px-4 py-2 bg-zinc-800 rounded-lg hover:bg-zinc-700 text-sm">Cancel</button>
               <button onClick={addLead} className="px-4 py-2 bg-violet-600 rounded-lg hover:bg-violet-500 text-sm font-medium">Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Source Dialog */}
+      {showImportDialog && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => { setShowImportDialog(false); setPendingFile(null); }}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-[420px]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-2">Import CSV</h3>
+            <p className="text-zinc-400 text-sm mb-4">Bu CSV hangi kaynak / tarih olarak etiketlensin?</p>
+            <input type="text" value={importSource} onChange={e => setImportSource(e.target.value)} placeholder="Kaynak etiketi (ör: 11 March)"
+              className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 mb-2"
+              onKeyDown={e => e.key === 'Enter' && confirmImport()} autoFocus />
+            <p className="text-zinc-500 text-xs mb-4">Dosya: {pendingFile?.name}</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => { setShowImportDialog(false); setPendingFile(null); }} className="px-4 py-2 bg-zinc-800 rounded-lg hover:bg-zinc-700 text-sm">İptal</button>
+              <button onClick={confirmImport} className="px-4 py-2 bg-cyan-600 rounded-lg hover:bg-cyan-500 text-sm font-medium">Import Et</button>
             </div>
           </div>
         </div>

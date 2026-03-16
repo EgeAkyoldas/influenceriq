@@ -19,11 +19,13 @@ function extractUsername(url: string): string | null {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { csv_data } = body as { csv_data: string };
+    const { csv_data, source } = body as { csv_data: string; source?: string };
 
     if (!csv_data) {
       return NextResponse.json({ error: 'csv_data is required (raw CSV string)' }, { status: 400 });
     }
+
+    const leadSource = source || 'csv_import';
 
     const lines = csv_data.split('\n').map(l => l.trim()).filter(Boolean);
     if (lines.length < 2) {
@@ -38,8 +40,11 @@ export async function POST(req: NextRequest) {
     const accountIdx = header.indexOf('ACCOUNT');
     const hqIdx = header.indexOf('HQ');
 
-    if (linkIdx === -1) {
-      return NextResponse.json({ error: 'CSV must have a LINK column' }, { status: 400 });
+    // Support both LINK-based and ACCOUNT-based (username-only) CSVs
+    const isUsernameOnly = linkIdx === -1 && accountIdx >= 0;
+
+    if (linkIdx === -1 && accountIdx === -1) {
+      return NextResponse.json({ error: 'CSV must have a LINK or ACCOUNT column' }, { status: 400 });
     }
 
     let imported = 0;
@@ -50,8 +55,19 @@ export async function POST(req: NextRequest) {
 
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',').map(c => c.trim());
-      const url = cols[linkIdx] || '';
-      const username = extractUsername(url);
+
+      let username: string | null = null;
+      let url = '';
+
+      if (isUsernameOnly) {
+        // Username-only CSV (ACCOUNT column)
+        const raw = (cols[accountIdx] || '').trim().replace('@', '').toLowerCase();
+        username = raw.length > 0 ? raw : null;
+      } else {
+        // Link-based CSV
+        url = cols[linkIdx] || '';
+        username = extractUsername(url);
+      }
 
       if (!username) {
         skipped++;
@@ -66,20 +82,22 @@ export async function POST(req: NextRequest) {
 
       const niche = nicheIdx >= 0 ? (cols[nicheIdx] || '').trim() : null;
       const followersRange = followersIdx >= 0 ? (cols[followersIdx] || '').trim() : null;
-      const hqScore = accountIdx >= 0 ? parseFloat(cols[accountIdx]) || 0 : 0;
+      // For username-only CSVs, accountIdx is used for username, not HQ score
+      const hqScore = !isUsernameOnly && accountIdx >= 0 ? parseFloat(cols[accountIdx]) || 0 : 0;
       const hq = hqIdx >= 0 ? (cols[hqIdx] || '').toUpperCase() === 'TRUE' ? 1 : 0 : 0;
 
       statements.push({
-        sql: `INSERT INTO leads (username, instagram_url, csv_niche, csv_followers_range, csv_hq_score, csv_hq, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        sql: `INSERT INTO leads (username, instagram_url, csv_niche, csv_followers_range, csv_hq_score, csv_hq, source, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
               ON CONFLICT(username) DO UPDATE SET
                 instagram_url = COALESCE(excluded.instagram_url, leads.instagram_url),
                 csv_niche = COALESCE(excluded.csv_niche, leads.csv_niche),
                 csv_followers_range = COALESCE(excluded.csv_followers_range, leads.csv_followers_range),
                 csv_hq_score = COALESCE(excluded.csv_hq_score, leads.csv_hq_score),
                 csv_hq = COALESCE(excluded.csv_hq, leads.csv_hq),
+                source = COALESCE(excluded.source, leads.source),
                 updated_at = datetime('now')`,
-        args: [username, url, niche, followersRange, hqScore, hq],
+        args: [username, url || null, niche, followersRange, hqScore, hq, leadSource],
       });
       imported++;
     }
@@ -102,6 +120,7 @@ export async function POST(req: NextRequest) {
       skipped,
       total_rows_parsed: lines.length - 1,
       total_leads_in_db: totalLeads,
+      source: leadSource,
     }, { status: 201 });
   } catch (error) {
     console.error('CSV import error:', error);

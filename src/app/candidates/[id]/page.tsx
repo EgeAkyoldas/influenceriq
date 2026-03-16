@@ -53,6 +53,7 @@ interface ProfileDetail {
   engagement_rate: number;
   monetization_signals: string[];
   risk_flags: string[];
+  dynamic_tags: string[];
   audience_alignment: number;
   content_style: string;
   tier: string;
@@ -70,6 +71,7 @@ interface ProfileDetail {
     permalink: string;
     timestamp: string;
   }>;
+  lead_source: string | null;
 }
 
 interface EditorDecision {
@@ -210,14 +212,14 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
     old_analysis: {
       tier: string; relevance_score: number; authority_score: number; audience_alignment: number;
       primary_cluster: string; secondary_cluster: string | null; monetization_signals: string[];
-      risk_flags: string[];
+      risk_flags: string[]; dynamic_tags: string[];
       is_approved: boolean; rejection_reason: string | null;
       content_style: string; content_summary: string; tier_reason: string;
     } | null;
     new_analysis: {
       tier: string; relevance_score: number; authority_score: number; audience_alignment: number;
       primary_cluster: string; secondary_cluster: string | null; monetization_signals: string[];
-      risk_flags: string[];
+      risk_flags: string[]; dynamic_tags: string[];
       is_approved: boolean; rejection_reason: string | null;
       content_style: string; content_summary: string; tier_reason: string;
     };
@@ -475,6 +477,14 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                   </a>
                 )}
 
+                {profile.lead_source && profile.lead_source !== 'csv_import' && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-medium">
+                      🆕 Source: {profile.lead_source}
+                    </span>
+                  </div>
+                )}
+
 
               </div>
             </div>
@@ -526,6 +536,25 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               <Separator />
+
+              {/* Dynamic Tags */}
+              {profile.dynamic_tags?.length > 0 && (
+                <>
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2 flex items-center gap-2">
+                      <Target className="w-3 h-3" /> Dynamic Tags
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.dynamic_tags.map((t, i) => (
+                        <Badge key={i} variant="outline" className="text-xs text-primary/80 border-primary/20 bg-primary/5">
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               <div className="space-y-3">
                 <ScoreBar label="Authority Score" value={profile.authority_score} max={10} />
@@ -706,14 +735,14 @@ function EditorFloatingPanel({
     old_analysis: {
       tier: string; relevance_score: number; authority_score: number; audience_alignment: number;
       primary_cluster: string; secondary_cluster: string | null; monetization_signals: string[];
-      risk_flags: string[];
+      risk_flags: string[]; dynamic_tags: string[];
       is_approved: boolean; rejection_reason: string | null;
       content_style: string; content_summary: string; tier_reason: string;
     } | null;
     new_analysis: {
       tier: string; relevance_score: number; authority_score: number; audience_alignment: number;
       primary_cluster: string; secondary_cluster: string | null; monetization_signals: string[];
-      risk_flags: string[];
+      risk_flags: string[]; dynamic_tags: string[];
       is_approved: boolean; rejection_reason: string | null;
       content_style: string; content_summary: string; tier_reason: string;
     };

@@ -267,7 +267,7 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                 {dashboardStats.topProfiles.map((p, i) => (
                   <div
-                    key={p.username}
+                    key={`${p.username}-${i}`}
                     className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/50"
                   >
                     <div className="text-lg font-bold text-muted-foreground w-6">#{i + 1}</div>

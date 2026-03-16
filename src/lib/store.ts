@@ -19,10 +19,12 @@ interface CandidateFilters {
   cluster: NicheCluster | null;
   tier: Tier | null;
   archetype: string | null;
+  source: string | null;
   search: string;
   sortBy: string;
   sortOrder: 'ASC' | 'DESC';
   page: number;
+  limit: number;
 }
 
 interface UIState {
@@ -85,10 +87,12 @@ const defaultFilters: CandidateFilters = {
   cluster: null,
   tier: null,
   archetype: null,
+  source: null,
   search: '',
   sortBy: 'authority_score',
   sortOrder: 'DESC',
   page: 1,
+  limit: 25,
 };
 
 export const useAppStore = create<AppStore>((set, get) => ({

@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
     const cluster = url.searchParams.get('cluster');
     const tier = url.searchParams.get('tier');
     const archetype = url.searchParams.get('archetype');
+    const source = url.searchParams.get('source');
     const search = url.searchParams.get('search');
     const sortBy = url.searchParams.get('sortBy') || 'authority_score';
     const sortOrder = url.searchParams.get('sortOrder') || 'DESC';
@@ -65,6 +66,10 @@ export async function GET(req: NextRequest) {
       whereClause += ' AND (p.username LIKE ? OR p.full_name LIKE ?)';
       queryParams.push(`%${search}%`, `%${search}%`);
     }
+    if (source) {
+      whereClause += ' AND l.source = ?';
+      queryParams.push(source);
+    }
 
     const sortColumn =
       safeSortBy === 'username' || safeSortBy === 'followers_count' ? `p.${safeSortBy}` :
@@ -76,6 +81,7 @@ export async function GET(req: NextRequest) {
       FROM profiles p
       LEFT JOIN analysis_results a ON a.profile_id = p.id
       LEFT JOIN verified_profiles v ON v.profile_id = p.id
+      LEFT JOIN leads l ON l.username = p.username
       ${whereClause}
     `;
     const countResult = await getOne<{ total: number }>(countQuery, queryParams);
@@ -84,14 +90,16 @@ export async function GET(req: NextRequest) {
     const dataQuery = `
       SELECT p.*, 
         a.primary_cluster, a.secondary_cluster, a.relevance_score, 
-        a.authority_score, a.engagement_rate, a.monetization_signals, 
+        a.authority_score, a.engagement_rate, a.monetization_signals, a.dynamic_tags,
         a.audience_alignment, a.content_style, a.content_summary, a.analyzed_at,
         COALESCE(v.editor_tier, v.tier, a.tier) as tier,
         COALESCE(a.is_approved, v.is_approved) as is_approved,
-        COALESCE(a.rejection_reason, v.rejection_reason) as rejection_reason
+        COALESCE(a.rejection_reason, v.rejection_reason) as rejection_reason,
+        l.source as lead_source
       FROM profiles p
       LEFT JOIN analysis_results a ON a.profile_id = p.id
       LEFT JOIN verified_profiles v ON v.profile_id = p.id
+      LEFT JOIN leads l ON l.username = p.username
       ${whereClause}
       ORDER BY ${sortColumn} ${safeSortOrder} NULLS LAST
       LIMIT ? OFFSET ?
@@ -102,11 +110,23 @@ export async function GET(req: NextRequest) {
     const parsed = (profiles as Record<string, unknown>[]).map(p => ({
       ...p,
       monetization_signals: p.monetization_signals ? JSON.parse(p.monetization_signals as string) : [],
+      dynamic_tags: p.dynamic_tags ? JSON.parse(p.dynamic_tags as string) : [],
       content_style: (p.content_style as string) || 'Unknown',
       is_verified: Boolean(p.is_verified),
       is_approved: p.is_approved === null || p.is_approved === undefined ? null : (p.is_approved === 1 ? 1 : 0),
       rejection_reason: (p.rejection_reason as string) || null,
     }));
+
+    // Get available sources for filter dropdown
+    const sources = await getAll<{ source: string; count: number }>(
+      `SELECT l.source, COUNT(*) as count
+       FROM profiles p
+       LEFT JOIN leads l ON l.username = p.username
+       LEFT JOIN analysis_results a ON a.profile_id = p.id
+       WHERE a.id IS NOT NULL
+       GROUP BY l.source
+       ORDER BY count DESC`
+    );
 
     return NextResponse.json({
       data: parsed,
@@ -116,6 +136,7 @@ export async function GET(req: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
+      sources,
     });
   } catch (error) {
     console.error('Profiles list error:', error);

@@ -18,6 +18,7 @@ export async function POST(
       audience_alignment: number;
       monetization_signals: string[];
       risk_flags: string[];
+      dynamic_tags: string[];
       tier: Tier;
       tier_reason: string;
       content_style: string;
@@ -52,9 +53,9 @@ export async function POST(
       await execute(`
         INSERT INTO analysis_results
           (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score,
-           engagement_rate, monetization_signals, risk_flags, audience_alignment, tier, tier_reason,
+           engagement_rate, monetization_signals, risk_flags, dynamic_tags, audience_alignment, tier, tier_reason,
            content_summary, content_style, is_approved, rejection_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         profileId,
         body.primary_cluster, body.secondary_cluster ?? null,
@@ -62,6 +63,7 @@ export async function POST(
         engagementRate,
         JSON.stringify(body.monetization_signals ?? []),
         JSON.stringify(body.risk_flags ?? []),
+        JSON.stringify(body.dynamic_tags ?? []),
         audienceAlignment,
         body.tier, body.tier_reason ?? '',
         body.content_summary || '',
@@ -80,6 +82,7 @@ export async function POST(
           authority_score    = CASE WHEN ? >= 1 THEN ? ELSE authority_score END,
           monetization_signals = CASE WHEN json_array_length(?) > 0 THEN ? ELSE monetization_signals END,
           risk_flags         = CASE WHEN json_array_length(?) > 0 THEN ? ELSE risk_flags END,
+          dynamic_tags       = CASE WHEN json_array_length(?) > 0 THEN ? ELSE dynamic_tags END,
           audience_alignment = CASE WHEN ? > 0 THEN ? ELSE audience_alignment END,
           tier               = ?,
           tier_reason        = CASE WHEN ? != '' THEN ? ELSE tier_reason END,
@@ -105,6 +108,7 @@ export async function POST(
         authorityScore, authorityScore,
         JSON.stringify(body.monetization_signals ?? []), JSON.stringify(body.monetization_signals ?? []),
         JSON.stringify(body.risk_flags ?? []), JSON.stringify(body.risk_flags ?? []),
+        JSON.stringify(body.dynamic_tags ?? []), JSON.stringify(body.dynamic_tags ?? []),
         audienceAlignment, audienceAlignment,
         body.tier,
         body.tier_reason ?? '', body.tier_reason ?? '',

@@ -37,6 +37,14 @@ export function buildClassifierPrompt(data: ClassifierInput): string {
   const safeUsername = sanitizeForPrompt(data.username || '');
   const safeCaptions = data.recent_captions.map(c => sanitizeForPrompt(c.substring(0, 150)));
 
+  let editorRefStr = '';
+  if (data.editorExamples && data.editorExamples.length > 0) {
+    editorRefStr = `## 📋 Editor Reference (calibration context)
+These are tier decisions made by a human editor recently. Use them to calibrate edge cases:
+${data.editorExamples.map((e, i) => `${i + 1}. @${e.username}: ${e.previous_tier ?? '?'} → ${e.new_tier} | Reason: "${e.editor_reason}"${e.editor_note ? ` | Note: "${e.editor_note}"` : ''}`).join('\n')}
+`;
+  }
+
   return `You are a strict, expert social media analyst evaluating Instagram profiles for a men's dating coaching brand partnership. Analyze this profile and classify it.
 
 ## Profile Data
@@ -54,119 +62,97 @@ export function buildClassifierPrompt(data: ClassifierInput): string {
 ## Recent Post Captions (last 25):
 ${safeCaptions.map((c, i) => `${i + 1}. ${c}`).join('\n')}
 
-## 🛑 HARD DISQUALIFICATION RULES — INSTANT REJECT
-If ANY of the following is true, set "is_approved" to false immediately. No exceptions.
+## 🛑 HARD DISQUALIFICATION RULES — TIER D (INSTANT REJECT)
+If ANY of the following is true, assign "Tier D" and set "is_approved" to false immediately. No exceptions.
 
-1. **The person is a woman.** Female creators are completely disqualified.
-2. **Fitness / gym / bodybuilding is the PRIMARY focus.** If the account is mainly about physique, workouts, or nutrition (not dating/mindset), reject it. A guy who *mentions* gym while coaching dating is fine — a fitness coach who posts dating fluff is NOT.
-3. **Faceless page.** If the creator never appears on camera, hides their face, or is clearly a content-aggregator/meme page rather than a personal brand, reject it.
-4. **Not a personal brand built around one individual.** Pages run by a company, team account, or nameless brand are disqualified. Must be one identifiable man coaching other men.
-5. **Follower count > 150,000.** Too large for our use case.
-6. **Follower count > 100,000 AND bio has no direct coaching offer.** Reject.
-7. **Under 1,000 followers**, reject UNLESS the profile is otherwise perfect (clear men's dating coach, face-to-camera, direct coaching offer in bio).
+1. **Not men / Not helping men.** Female creators or creators targeting women are disqualified.
+2. **Purely fitness coach.** If the account is purely fitness/gym (not dating/mindset), reject it. Also reject any other niche outside of dating, mindset, relationships, or masculinity.
+3. **Faceless pages.** Must be a recognizable personal brand.
+4. **Follower count > 150,000.** Too large for our use case.
+5. **Content is ONLY POV or meme or random content.** Must have personal coaching presence.
 
-## ⚠️ ADDITIONAL REJECTION CONDITIONS
-8. **Content format is ONLY text-overlay quotes or meme reposts** with no original speaking-to-camera content. Reject.
-9. **Bio has nothing** about helping men, coaching, or dating. Reject if completely irrelevant bio.
+## 🏆 TIER DEFINITIONS AND REQUIREMENTS
+Assign the matching tier by evaluating Followers, Niche, Face-to-camera %, Monetization, and Post cadence.
 
-## 📊 FOLLOWER COUNT SCORING (impacts relevance_score, not tier directly)
-- 1K–50K: ✅ Ideal range — full relevance credit
-- 50K–100K: ⚠️ Acceptable but slightly large — minor relevance penalty
-- 100K–150K: ⚠️ Borderline — medium relevance penalty, tier should not be S or A unless everything else is exceptional
-- >150K: ❌ HARD REJECT (rule 5 above)
-- <1K: ⚠️ Soft penalty — only pass if profile quality is exceptional
+- **S Tier (Perfect Fit)**
+  - Niche: STRICTLY Men's dating niche.
+  - Followers: 500 - 100,000
+  - Content Format: At least 30% of recent content is face-to-camera while talking reels.
+  - Monetization: Has obviously monetized (clear coaching offer, funnel, or link).
+  - Posting Frequency: Posting at least 3x a week recently.
+  - Examples: @ryan_unhinged, @peteonealdating, @alexleon.life, @kingracso, @rorygoodlife, @sbdating._, @madisonsocialcoach, @sheshn94, @datingcoachemi, @seduzionealpha, @datingjutsu, @cristianomungioli, @_nextlevelsocial, @apex.andyy, @datingcoachformen, @mikepickupalpha, @confidencebymike, @silver.wolf.strategies, @mirkmode, @dean_raymond_dating, @mrdanferrari, @everlasting.confidence, @defundsimping, @thedeeceejay, @dylanhunterdating, @realdominicsamuel, @coach_seb_dating, @shaymaxx.x, @czarofdating, @therealbencampbell, @nickoptics, @ovomaksim, @mjgetright_, @crosshimself
 
-## 🎬 CONTENT STYLE PRIORITY (critical for tier)
-- **"Face to camera"**: REQUIRED for S or A tier. Creator must speak directly to audience.
-- **"Mixed"**: Acceptable for A/B tier if face-to-camera is at least 50%
-- **"POV approach"**: Acceptable if combined with face-to-camera content
-- **"Text overlay"**: Caps tier at B maximum
-- **"Meme / aggregator"**: Caps tier at C; if it's ALL memes, reject
-- **"Lifestyle / vlog"**: Not a coaching account — caps at C, likely D
+- **A Tier (Good Fit)**
+  - Niche: Men's dating and/or mindset and/or relationships and/or masculinity.
+  - Followers: 100 - 60,000
+  - Content Format: At least 10% of recent content is face-to-camera while talking reels.
+  - Monetization: Has obviously monetized.
+  - Posting Frequency: Posting at least 1x a week recently.
+  - Examples: @consultantchris, @claytonolsoncoaching, @realcoachlee, @recoverwithnate, @garrettjwhite, @brayden.steckler, @cj.jelinek, @darrenpreilly, @mindsetmastermike, @gamewithframe, @jonny.wtk, @the.recovering.narcissist, @drmathisk, @ptk_mindset, @newcitymastery, @harrisonj.orr, @officialchrisgoldy, @apex.maximilian, @projectlovern, @seb.bates, @aleksfidurski, @lifeofjayhatcher, @bradleyamartin, @michael_hedgecock, @adam___jackson
 
-## 💰 BIO / MONETIZATION CHECK (critical for S/A tier)
-Strong monetization signals in bio (ANY of these = strong positive signal):
-- "DM me for coaching", "DM [keyword] for coaching", "apply for coaching"
-- "Work with me", "Free consultation", "Book a call"
-- Link to a landing page / coaching website in bio
-- Explicit statement of helping men (e.g. "I help men get dates", "coaching men")
+- **B Tier (Has Potential)**
+  - Niche: Men's dating and/or mindset and/or relationships and/or masculinity.
+  - Followers: 100 - 100,000
+  - Monetization: Unclear / nonexisting monetization.
+  - Content Format: Style might be good but it has too much meme or random stuff, it is not as intentional and coaching oriented.
+  - Posting Frequency: Posting at least 1x a week recently.
+  - Examples: @fathers.on.fire, @maxxingwithmack, @asherrwhiteee, @alepuigg, @risewithdhamare, @scorpius._____, @thestevemayhew, @fortify__
 
-Weak or missing signals:
-- Vague bio with no offer → medium penalty
-- No bio → significant penalty, tier cannot be S
-- Bio irrelevant to dating/coaching → reject (rule 9)
+- **C Tier (Not very good but still worth talking to)**
+  - Niche: Men's dating and/or mindset and/or relationships and/or masculinity.
+  - Followers: 10 - 150,000
+  - Acceptable Red Flags: Has a photo with his partner in his profile picture, too much stuff about spirituality / alchemy tantra or weird stuff, indian, bio might include jokes or unclear signals, too much profanity, "hood" language.
+  - Monetization: Retreats or nonexistant.
+  - Posting Frequency: Has posted at least one in the last 30 days.
+  - Examples: @brandon.groux, @evolverelating, @nemanja_sonero, @realbartk, @newfoundawakening, @the.essential.man, @danlunn_, @arestheleader, @theultimategentleman5, @its.tylerjames, @themikeromano, @builtfromwithin.co, @gen6ceo, @the_dating_method_, @mariomindset247, @unhingedsanity_
 
-## ⏰ POSTING FREQUENCY
-- ≥1 post/week: ✅ Good
-- <1 post/week: tier capped at A maximum (not S); heavy penalty below 2/month
+- **D Tier (Unqualified)**
+  - Niche: Purely fitness coach, or in any other niche. ONLY POV/meme/random. Faceless. Not helping men. >150K followers.
+  - Examples: @zenofmasculinity, @thesuperhuman.diet, @_mickmoves, @_bazunes0, @terinchapman
 
-## Tier Assignment (based on qualified profiles)
-- **S Tier**: Unambiguous men's dating coach. Face-to-camera. Direct coaching offer in bio OR landing page link. 1K–50K followers ideal. Consistent posting ≥1/week. Active monetization visible.
-- **A Tier**: Clear men's coaching niche. Coaching presence visible. Mostly face-to-camera. May miss ONE criterion (e.g., followers 50K–100K, or bio slightly vague).
-- **B Tier**: Related men's niche (mindset/masculinity), some monetization intent. Missing 2+ key coaching signals. Mixed content format.
-- **C Tier**: Tangential niche, unclear coaching offer, problematic format. Borderline approval — coach may pass OR fail.
-- **D Tier**: Barely relevant. is_approved should almost always be false here.
-
-> **IMPORTANT:** Tier is driven by RELEVANCE to a men's dating coaching partnership (relevance_score 0–100).
-> authority_score (1–10) is a supplementary informational metric only. It does NOT determine tier.
-> Do not confuse the two.
+> **IMPORTANT:** Tier is assigned by evaluating the EXACT criteria rules listed above (Followers, Niche, Formatting, Cadence, Monetization). If they miss S, check if they fit A, B, or C. If none apply, they are D.
+> authority_score (1–10) is a supplementary informational metric only (how authoritative do they speak/look). Do not confuse the two.
 
 ## Content Style Detection
-Inspect the captions carefully and determine the DOMINANT content format. You MUST choose ONE — do NOT use "Unknown".
-Even if captions are short or ambiguous, make a best-guess based on:
-- Language patterns ("look at this approach", "DM me" → coaching; "that feeling when" → meme)
-- Posting cadence implied by caption variety
-- Presence of first-person speaking patterns vs. passive quote sharing
-
-Pick ONE of these labels:
-- **"Face to camera"** — creator visibly speaks to the audience, captions use first-person teaching voice ("In today's video...", "Here's what to say...")
-- **"POV approach"** — cold approach / pickup / street interaction content from first-person PoV
-- **"Text overlay"** — mostly motivational quotes, image macro-style captions, or one-liners with no coaching depth
-- **"Mixed"** — clear combination of face-to-camera and other formats evident from caption variety
+Inspect the captions carefully and determine the DOMINANT content format. Pick ONE of these labels:
+- **"Face to camera"** — creator visibly speaks directly to the audience, highly coaching-focused
+- **"POV approach"** — cold approach / street interaction content from first-person PoV
+- **"Text overlay"** — mostly motivational quotes, image macro-style captions, one-liners
+- **"Mixed"** — combination of face-to-camera and other formats evident from caption variety
 - **"Meme / aggregator"** — mostly jokes, reposts, relatable memes — no original coaching
 - **"Lifestyle / vlog"** — day-in-the-life, travel, gym logs — creator's life rather than coaching
 
 ## Scoring Fields
-- **relevance_score** (0–100): How relevant to a men's dating/coaching campaign? This is the PRIMARY tier driver.
-- **authority_score** (1–10): Rough voice/expertise indicator. Informational only — NOT used to assign tier.
-- **monetization_signals**: List detected monetization (e.g., "coaching calls", "paid community", "DM funnel", "digital products").
+- **relevance_score** (0–100): How relevant to a men's dating/coaching campaign? A score matching how close they are to S-tier benchmarks.
+- **authority_score** (1–10): Rough voice/expertise indicator. Informational only.
+- **monetization_signals**: List detected monetization (e.g., "coaching calls", "paid community", "retreats").
 - **audience_alignment** (0–100): How well does the audience overlap with men seeking dating/self-improvement advice?
 - **risk_flags**: List any red flags detected from the data. Use ONLY these exact strings (or empty array if none):
   - "Suspected fake engagement" — engagement rate unusually high (>25%) for follower size
-  - "Very low posting frequency" — fewer than 2 posts/month based on media_count signals
-  - "High follow-to-follower ratio" — following count is significantly higher than followers (>3x)
-  - "No coaching offer in bio" — bio has no mention of helping men, coaching, or any CTA
+  - "Very low posting frequency" — fewer than 1 post a month
+  - "No coaching offer in bio" — unclear/nonexistent monetization
   - "Meme / faceless content" — content is mostly aggregated memes or faceless posts
-  - "Audience mismatch" — content targets women, general lifestyle, or an unrelated niche
-  - "Micro account risk" — under 1,000 followers, unproven reach
-  - "Large account risk" — over 100K followers, likely misaligned for micro partnerships
-  - "Low authority signal" — authority_score below 3; thin content, lacks coaching credibility
+  - "Audience mismatch" — content targets women or completely irrelevant niche
+  - "Large account risk" — over 100K followers (close to the 150k hard reject limit)
+  - "Spiritual / Tantra content" — too much weird/spirituality content
+  - "Hood language / Profanity" — excessive swearing or slang
 
-## Classification Taxonomy
+## Classification Taxonomy & Dynamic Tags
 Classify into ONE primary cluster and optionally ONE secondary cluster:
 1. **dating** — Men's Dating (pickup, attraction, dating advice, rizz)
 2. **mindset** — Men's Mindset (self-improvement, stoicism, discipline)
 3. **relationships** — Men's Relationships (marriage, long-term, communication)
 4. **masculinity** — Masculinity (traditional masculinity, fraternity, male lifestyle)
-${data.editorExamples && data.editorExamples.length > 0 ? `
-## 📋 Editor Reference (past human decisions — learn from these)
-These are tier decisions made by a human editor after AI analysis. Use them to calibrate your standards:
-${data.editorExamples.map((e, i) => `${i + 1}. @${e.username}: ${e.previous_tier ?? '?'} → ${e.new_tier} | Reason: "${e.editor_reason}"${e.editor_note ? ` | Note: "${e.editor_note}"` : ''}`).join('\n')}
 
-Match the editorial judgment shown above relative to the benchmark accounts below.` : ''}
+**Dynamic Tags**: The 4 clusters above are rigid. If this creator focuses on a unique teagential angle (e.g., "Men's Grooming", "Wealth Generation", "Fitness & Biohacking", "Spiritual Alchemy"), add up to 3 short descriptive tags to the \`dynamic_tags\` array.
 
-## 🏆 Benchmark Accounts (calibration reference)
-The following are confirmed S Tier accounts — use them to calibrate your judgment:
-1. **@sbdating._**: Face-to-camera, "DM for coaching" in bio, clear men's dating niche, sub-50K followers, consistent posting. → S Tier
-2. **@newcitymastery**: Face-to-camera, landing page link in bio, consistent posting, men's dating coach positioning. → S Tier
-
-When you see a profile that closely matches these benchmarks, classify as S Tier. Profiles that are close but miss 1-2 criteria should be A Tier.
-
+${editorRefStr}
 ## Output Format
 Return ONLY valid JSON, no markdown, no explanations:
 {
   "primary_cluster": "dating|mindset|relationships|masculinity",
   "secondary_cluster": "dating|mindset|relationships|masculinity|null",
+  "dynamic_tags": ["Tag1", "Tag2"],
   "relevance_score": 0-100,
   "authority_score": 1-10,
   "monetization_signals": ["signal1", "signal2"],
@@ -174,9 +160,9 @@ Return ONLY valid JSON, no markdown, no explanations:
   "risk_flags": ["flag1", "flag2"],
   "content_style": "Face to camera|POV approach|Text overlay|Mixed|Meme / aggregator|Lifestyle / vlog",
   "tier": "S|A|B|C|D",
-  "tier_reason": "1-2 sentence English explanation of WHY this tier. Cite key qualifying and disqualifying signals. Mention follower range, content style, and bio/monetization specifically.",
+  "tier_reason": "1-2 sentence English explanation of WHY this tier. Cite the exact rules matching the tier (Followers, Face %, Posting Cadence, Monetization). Mention their similarity to specific benchmark examples provided if applicable.",
   "content_summary": "2-3 sentence summary of the creator's strategy, positioning, and content style.",
   "is_approved": true|false,
-  "rejection_reason": "Exact reason for rejection if is_approved is false, else null"
+  "rejection_reason": "Exact reason for rejection if is_approved is false (Tier D), else null"
 }`;
 }

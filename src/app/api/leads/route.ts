@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get('search') || '';
     const niche = searchParams.get('niche') || '';
     const fetchStatus = searchParams.get('fetch_status') || '';
+    const source = searchParams.get('source') || '';
     const hqOnly = searchParams.get('hq_only') === 'true';
     const sortBy = searchParams.get('sort_by') || 'created_at';
     const sortDir = searchParams.get('sort_dir') === 'asc' ? 'ASC' : 'DESC';
@@ -29,6 +30,10 @@ export async function GET(req: NextRequest) {
       where += ' AND l.fetch_status = ?';
       params.push(fetchStatus);
     }
+    if (source) {
+      where += ' AND l.source = ?';
+      params.push(source);
+    }
     if (hqOnly) {
       where += ' AND l.csv_hq = 1';
     }
@@ -47,11 +52,12 @@ export async function GET(req: NextRequest) {
     // Get niche distribution
     const niches = await getAll('SELECT csv_niche, COUNT(*) as count FROM leads GROUP BY csv_niche ORDER BY count DESC');
     const statusCounts = await getAll('SELECT fetch_status, COUNT(*) as count FROM leads GROUP BY fetch_status');
+    const sourceCounts = await getAll('SELECT source, COUNT(*) as count FROM leads GROUP BY source ORDER BY count DESC');
 
     return NextResponse.json({
       data: leads,
       pagination: { page, limit, total: countResult?.count ?? 0, totalPages: Math.ceil((countResult?.count ?? 0) / limit) },
-      filters: { niches, statusCounts },
+      filters: { niches, statusCounts, sourceCounts },
     });
   } catch (error) {
     console.error('Leads list error:', error);
@@ -62,7 +68,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username, csv_niche, csv_followers_range, csv_hq_score, csv_hq } = body;
+    const { username, csv_niche, csv_followers_range, csv_hq_score, csv_hq, source } = body;
 
     if (!username) {
       return NextResponse.json({ error: 'username is required' }, { status: 400 });
@@ -70,13 +76,13 @@ export async function POST(req: NextRequest) {
 
     const cleaned = username.trim().replace('@', '').toLowerCase();
     const result = await execute(
-      `INSERT INTO leads (username, csv_niche, csv_followers_range, csv_hq_score, csv_hq)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO leads (username, csv_niche, csv_followers_range, csv_hq_score, csv_hq, source)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(username) DO UPDATE SET
          csv_niche = COALESCE(excluded.csv_niche, leads.csv_niche),
          csv_followers_range = COALESCE(excluded.csv_followers_range, leads.csv_followers_range),
          updated_at = datetime('now')`,
-      [cleaned, csv_niche || null, csv_followers_range || null, csv_hq_score || 0, csv_hq ? 1 : 0]
+      [cleaned, csv_niche || null, csv_followers_range || null, csv_hq_score || 0, csv_hq ? 1 : 0, source || 'manual']
     );
 
     return NextResponse.json({ id: Number(result.lastInsertRowid), username: cleaned }, { status: 201 });

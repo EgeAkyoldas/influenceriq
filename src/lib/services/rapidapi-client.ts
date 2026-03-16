@@ -1,9 +1,39 @@
 import { GraphApiProfile, GraphApiMedia } from './instagram-client';
+import fs from 'fs';
+import path from 'path';
 
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'instagram-scraper-stable-api.p.rapidapi.com';
 
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function downloadAvatar(url: string, username: string): Promise<string> {
+  if (!url) return '';
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch image: ${res.statusText}`);
+    
+    // Convert to buffer
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // Setup paths
+    const publicDir = path.join(process.cwd(), 'public', 'avatars');
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    
+    const fileName = `${username}.jpg`;
+    const fullPath = path.join(publicDir, fileName);
+    
+    // Save to disk
+    fs.writeFileSync(fullPath, buffer);
+    return `/avatars/${fileName}`; // Return relative path for web usage
+  } catch (error) {
+    console.error(`[RapidAPI] ⚠️ Failed to download avatar for @${username}`, error);
+    return url; // Fallback to raw URL if download fails
+  }
 }
 
 export async function fetchProfileFromRapidAPI(username: string): Promise<{
@@ -17,132 +47,117 @@ export async function fetchProfileFromRapidAPI(username: string): Promise<{
   }
 
   try {
-    console.log(`[RapidAPI] Fetching @${username} via Fallback (instagram-scraper-stable-api)...`);
+    console.log(`[RapidAPI] Fetching profile @${username} (instagram-scraper-stable-api)...`);
     
-    // Using the user info endpoint from the scraper
-    const url = `https://${RAPIDAPI_HOST}/v1/users/info?username=${encodeURIComponent(username)}`;
-    
-    let response;
+    // 1. Fetch Profile Info
+    const profileUrl = `https://${RAPIDAPI_HOST}/ig_get_fb_profile_hover.php?username_or_url=${encodeURIComponent(username)}`;
+    let profileResponse;
     const retries = 3;
     
     for (let i = 0; i < retries; i++) {
-        response = await fetch(url, {
+      profileResponse = await fetch(profileUrl, {
         method: 'GET',
         headers: {
             'x-rapidapi-key': token,
             'x-rapidapi-host': RAPIDAPI_HOST
         }
-        });
+      });
 
-        if (response.status === 429) {
-            const waitTime = Math.pow(2, i + 1) * 10000; // 20s, 40s, 80s
-            console.log(`[RapidAPI] ⏳ HTTP 429 rate limited. Waiting ${waitTime / 1000}s before retry ${i + 1}/${retries}`);
-            await sleep(waitTime);
-            continue;
-        }
-        break;
-    }
-
-    if (!response || !response.ok) {
-      if (response?.status === 429) {
-        throw new Error('RapidAPI Rate Limit Exceeded after retries');
+      if (profileResponse.status === 429) {
+          const waitTime = Math.pow(2, i + 1) * 10000;
+          console.log(`[RapidAPI] ⏳ HTTP 429 (Profile). Waiting ${waitTime / 1000}s before retry ${i + 1}/${retries}`);
+          await sleep(waitTime);
+          continue;
       }
-      throw new Error(`RapidAPI Error: ${response?.status} ${response?.statusText}`);
+      break;
     }
 
-    const data = await response.json();
-    
-    // The structure often returned by this specific API is under 'data'
-    const userData = data?.data || data;
+    if (!profileResponse || !profileResponse.ok) {
+      if (profileResponse?.status === 429) {
+        throw new Error('RapidAPI Rate Limit Exceeded after retries (Profile)');
+      }
+      throw new Error(`RapidAPI Error (Profile): ${profileResponse?.status} ${profileResponse?.statusText}`);
+    }
+
+    const rawData = await profileResponse.json();
+    const userData = rawData?.user_data;
     
     if (!userData || !userData.id) {
-      console.warn(`[RapidAPI] ⚠️ Could not parse user data for @${username}. Keys found:`, Object.keys(data));
+      console.warn(`[RapidAPI] ⚠️ Could not parse user data for @${username}.`);
       return null;
     }
 
-    // Adapt to different possible scraper formats for standard profile info
+    // Attempt to download local profile picture
+    const originalPicUrl = userData.hd_profile_pic_url_info?.url || userData.profile_pic_url || '';
+    const localPicUrl = await downloadAvatar(originalPicUrl, username);
+
     const profile: GraphApiProfile = {
       id: userData.id?.toString() || '',
       username: userData.username || username,
-      name: userData.full_name || userData.name || '',
+      name: userData.full_name || '',
       biography: userData.biography || '',
-      followers_count: userData.follower_count || userData.edge_followed_by?.count || 0,
-      follows_count: userData.following_count || userData.edge_follow?.count || 0,
-      media_count: userData.media_count || userData.edge_owner_to_timeline_media?.count || 0,
-      profile_picture_url: userData.profile_pic_url_hd || userData.profile_pic_url || '',
+      followers_count: userData.follower_count || 0,
+      follows_count: userData.following_count || 0,
+      media_count: userData.media_count || 0,
+      profile_picture_url: localPicUrl, // Use the local proxy URL!
       website: userData.external_url || '',
       is_verified: userData.is_verified || false,
     };
 
-    // Attempt to grab media if it's included in the info response (some scrapers do this)
+    // 2. Fetch Posts Data
     const media: GraphApiMedia[] = [];
-    const mediaNodes = userData.edge_owner_to_timeline_media?.edges || [];
+    console.log(`[RapidAPI] Fetching posts for @${username}...`);
     
-    for (const edge of mediaNodes) {
-      const node = edge.node;
-      if (!node) continue;
+    try {
+      const postsUrl = `https://${RAPIDAPI_HOST}/get_ig_user_posts.php`;
+      let postsResponse;
+      const postRetries = 2;
       
-      media.push({
-        id: node.id,
-        media_type: node.is_video ? 'VIDEO' : 'IMAGE',
-        caption: node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
-        like_count: node.edge_media_preview_like?.count || 0,
-        comments_count: node.edge_media_to_comment?.count || 0,
-        timestamp: new Date((node.taken_at_timestamp || 0) * 1000).toISOString(),
-        permalink: node.shortcode ? `https://instagram.com/p/${node.shortcode}/` : undefined
-      });
-    }
-
-    // If media wasn't in the info response, we might need to make a second request to /v1/users/posts
-    // But for the fallback, just the profile might be acceptable enough to continue the flow.
-    // Let's also fetch posts if media is empty, since we are falling back and the caller expects media.
-    if (media.length === 0) {
-      try {
-        const postsUrl = `https://${RAPIDAPI_HOST}/v1/users/posts?username=${encodeURIComponent(username)}`;
-        let postsResponse;
-        const postRetries = 2;
-        
-        for (let i = 0; i < postRetries; i++) {
-            postsResponse = await fetch(postsUrl, {
-            method: 'GET',
-            headers: {
-                'x-rapidapi-key': token,
-                'x-rapidapi-host': RAPIDAPI_HOST
-            }
-            });
-            
-            if (postsResponse.status === 429) {
-                const waitTime = Math.pow(2, i + 1) * 10000;
-                console.log(`[RapidAPI] ⏳ HTTP 429 on posts. Waiting ${waitTime / 1000}s before retry ${i + 1}/${postRetries}`);
-                await sleep(waitTime);
-                continue;
-            }
-            break;
-        }
-        
-        if (postsResponse && postsResponse.ok) {
-          const postsData = await postsResponse.json();
-          const items = postsData?.data?.items || postsData?.items || [];
+      for (let i = 0; i < postRetries; i++) {
+          postsResponse = await fetch(postsUrl, {
+          method: 'POST',
+          headers: {
+              'x-rapidapi-key': token,
+              'x-rapidapi-host': RAPIDAPI_HOST,
+              'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `username_or_url=${encodeURIComponent(username)}`
+          });
           
-          for (const item of items) {
-            media.push({
-              id: item.id || item.pk,
-              media_type: item.media_type === 2 ? 'VIDEO' : (item.media_type === 8 ? 'CAROUSEL_ALBUM' : 'IMAGE'),
-              caption: item.caption?.text || '',
-              like_count: item.like_count || 0,
-              comments_count: item.comment_count || 0,
-              timestamp: item.taken_at ? new Date(item.taken_at * 1000).toISOString() : new Date().toISOString(),
-              permalink: item.code ? `https://instagram.com/p/${item.code}/` : undefined
-            });
-            if (media.length >= 25) break; // match graph API limit
+          if (postsResponse.status === 429) {
+              const waitTime = Math.pow(2, i + 1) * 10000;
+              console.log(`[RapidAPI] ⏳ HTTP 429 (Posts). Waiting ${waitTime / 1000}s before retry ${i + 1}/${postRetries}`);
+              await sleep(waitTime);
+              continue;
           }
-        }
-      } catch (err) {
-        console.warn(`[RapidAPI] ⚠️ Failed to fetch posts for @${username}`, err);
+          break;
       }
+      
+      if (postsResponse && postsResponse.ok) {
+        const postsData = await postsResponse.json();
+        const items = postsData?.posts || [];
+        
+        for (const item of items) {
+          const node = item.node || item;
+          if (!node || !node.id) continue;
+          
+          media.push({
+            id: node.id || node.pk,
+            media_type: node.media_type === 2 ? 'VIDEO' : (node.media_type === 8 ? 'CAROUSEL_ALBUM' : 'IMAGE'),
+            caption: node.accessibility_caption || node.caption?.text || node.caption || '',
+            like_count: node.like_count || 0,
+            comments_count: node.comment_count || node.comments_count || 0,
+            timestamp: node.taken_at ? new Date(node.taken_at * 1000).toISOString() : new Date().toISOString(),
+            permalink: node.code ? `https://instagram.com/p/${node.code}/` : undefined
+          });
+          if (media.length >= 25) break;
+        }
+      }
+    } catch (err) {
+      console.warn(`[RapidAPI] ⚠️ Failed to fetch posts for @${username}`, err);
     }
 
-    console.log(`[RapidAPI] ✅ Successfully fetched fallback data for @${username}`);
+    console.log(`[RapidAPI] ✅ Successfully fetched fallback data for @${username} (${media.length} posts found)`);
     return { profile, media };
 
   } catch (err: unknown) {
@@ -151,3 +166,4 @@ export async function fetchProfileFromRapidAPI(username: string): Promise<{
     return null;
   }
 }
+

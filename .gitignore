@@ -30,8 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -40,4 +41,20 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# local databases
+turso-local.db
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# large seed data
+turso-seed-data.sql
+
+# legacy scripts (moved to /legacy)
+/legacy/
+
+# cached avatars (downloaded at runtime)
+public/avatars/
+
+# agent config (not needed in production)
+.gemini/

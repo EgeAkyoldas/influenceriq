@@ -36,6 +36,7 @@ export async function POST(
     const currentAnalysis = await getOne<{
       primary_cluster: string; secondary_cluster: string; relevance_score: number;
       authority_score: number; engagement_rate: number; monetization_signals: string;
+      dynamic_tags: string;
       audience_alignment: number; tier: string; tier_reason: string; content_style: string;
       content_summary: string; risk_flags: string; is_approved: number; rejection_reason: string;
     }>('SELECT * FROM analysis_results WHERE profile_id = ?', [profileId]);
@@ -46,14 +47,15 @@ export async function POST(
       const snap = await execute(`
         INSERT INTO analysis_snapshots
           (profile_id, snapshot_reason, primary_cluster, secondary_cluster, relevance_score,
-           authority_score, engagement_rate, monetization_signals, audience_alignment, tier,
+           authority_score, engagement_rate, monetization_signals, dynamic_tags, audience_alignment, tier,
            tier_reason, content_style, content_summary, is_approved, rejection_reason)
-        VALUES (?, 'reverify', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, 'reverify', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         profileId,
         currentAnalysis.primary_cluster, currentAnalysis.secondary_cluster,
         Number(currentAnalysis.relevance_score) || 0, Number(currentAnalysis.authority_score) || 0,
         Number(currentAnalysis.engagement_rate) || 0, currentAnalysis.monetization_signals,
+        currentAnalysis.dynamic_tags,
         Number(currentAnalysis.audience_alignment) || 0, currentAnalysis.tier, currentAnalysis.tier_reason,
         currentAnalysis.content_style, currentAnalysis.content_summary,
         currentAnalysis.is_approved, currentAnalysis.rejection_reason

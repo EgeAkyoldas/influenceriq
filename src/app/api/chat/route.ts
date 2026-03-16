@@ -15,6 +15,10 @@ async function fetchDBContext() {
     SELECT csv_niche, COUNT(*) as count FROM leads WHERE csv_niche IS NOT NULL GROUP BY csv_niche ORDER BY count DESC LIMIT 10
   `);
 
+  const sourceStats = await getAll<{ source: string; count: number }>(`
+    SELECT source, COUNT(*) as count FROM leads GROUP BY source ORDER BY count DESC
+  `);
+
   const topCandidates = await getAll<{
     username: string; followers_count: number; primary_cluster: string;
     tier: string; authority_score: number; engagement_rate: number; content_summary: string;
@@ -39,7 +43,11 @@ async function fetchDBContext() {
     SELECT primary_cluster, COUNT(*) as count FROM analysis_results WHERE primary_cluster IS NOT NULL GROUP BY primary_cluster ORDER BY count DESC
   `);
 
-  return { totalLeads, statusMap, nicheStats, topCandidates, tierStats, lastBatch, clusterStats };
+  const recentLeads = await getAll<{ username: string; source: string; fetch_status: string }>(`
+    SELECT username, source, fetch_status FROM leads ORDER BY created_at DESC LIMIT 10
+  `);
+
+  return { totalLeads, statusMap, nicheStats, sourceStats, topCandidates, tierStats, lastBatch, clusterStats, recentLeads };
 }
 
 export async function POST(request: NextRequest) {

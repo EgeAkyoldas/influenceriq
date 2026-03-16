@@ -9,9 +9,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Initialize theme
+    // Initialize theme on mount
     const savedTheme = localStorage.getItem('theme') as 'dark' | 'light' | null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(savedTheme || 'dark');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, [setTheme]);
 

@@ -9,12 +9,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       SELECT p.*,
         a.primary_cluster, a.secondary_cluster, a.relevance_score,
         a.authority_score, a.engagement_rate, a.monetization_signals, a.risk_flags,
-        a.audience_alignment, a.content_style, a.tier, a.tier_reason, a.content_summary, a.analyzed_at,
+        a.dynamic_tags, a.audience_alignment, a.content_style, a.tier, a.tier_reason, a.content_summary, a.analyzed_at,
         COALESCE(a.is_approved, v.is_approved) as is_approved,
-        COALESCE(a.rejection_reason, v.rejection_reason) as rejection_reason
+        COALESCE(a.rejection_reason, v.rejection_reason) as rejection_reason,
+        l.source as lead_source
       FROM profiles p
       LEFT JOIN analysis_results a ON a.profile_id = p.id
       LEFT JOIN verified_profiles v ON v.profile_id = p.id
+      LEFT JOIN leads l ON l.username = p.username
       WHERE p.id = ?
     `, [Number(id)]);
 
@@ -29,6 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ...p,
       monetization_signals: p.monetization_signals ? JSON.parse(p.monetization_signals as string) : [],
       risk_flags: p.risk_flags ? JSON.parse(p.risk_flags as string) : [],
+      dynamic_tags: p.dynamic_tags ? JSON.parse(p.dynamic_tags as string) : [],
       content_style: (p.content_style as string) || 'Unknown',
       is_verified: Boolean(p.is_verified),
       is_approved: p.is_approved === null || p.is_approved === undefined ? null : (p.is_approved === 1 || p.is_approved === true) ? 1 : 0,

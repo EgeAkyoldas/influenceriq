@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS leads (
   fetch_status TEXT DEFAULT 'pending' CHECK(fetch_status IN ('pending', 'fetching', 'fetched', 'unfetchable', 'error')),
   error_message TEXT,
   profile_id INTEGER REFERENCES profiles(id),
+  source TEXT DEFAULT 'csv_import',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

@@ -6,6 +6,7 @@ import type { NicheCluster, Tier } from '@/types';
 interface ClassificationResult {
   primary_cluster: NicheCluster;
   secondary_cluster: NicheCluster | null;
+  dynamic_tags: string[];
   relevance_score: number;
   authority_score: number;
   monetization_signals: string[];
@@ -95,6 +96,8 @@ export async function analyzeProfile(data: ClassifierInput): Promise<Classificat
     }
 
     if (!Array.isArray(result.monetization_signals)) result.monetization_signals = [];
+    if (!Array.isArray(result.dynamic_tags)) result.dynamic_tags = [];
+    result.dynamic_tags = result.dynamic_tags.map(String).slice(0, 3);
 
     // Normalize risk_flags — whitelist-only, filter out hallucinated strings
     const validRiskFlags = [
