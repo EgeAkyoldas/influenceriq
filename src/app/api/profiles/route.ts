@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       'Tribe Father':     { primary: 'masculinity',   secondary: 'relationships' },
     };
 
-    const allowedSorts = ['authority_score', 'followers_count', 'engagement_rate', 'relevance_score', 'username', 'is_approved'];
+    const allowedSorts = ['authority_score', 'followers_count', 'engagement_rate', 'relevance_score', 'username', 'is_approved', 'lead_source'];
     const safeSortBy = allowedSorts.includes(sortBy) ? sortBy : 'authority_score';
     const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
@@ -63,8 +63,8 @@ export async function GET(req: NextRequest) {
       }
     }
     if (search) {
-      whereClause += ' AND (p.username LIKE ? OR p.full_name LIKE ?)';
-      queryParams.push(`%${search}%`, `%${search}%`);
+      whereClause += ' AND (p.username LIKE ? OR p.full_name LIKE ? OR l.source LIKE ?)';
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
     if (source) {
       whereClause += ' AND l.source = ?';
