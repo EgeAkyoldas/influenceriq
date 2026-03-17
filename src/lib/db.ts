@@ -38,11 +38,19 @@ let schemaInitialized = false;
 function getConfig() {
   const rawUrl = process.env.TURSO_DATABASE_URL;
   const authToken = process.env.TURSO_AUTH_TOKEN;
-  if (!rawUrl) throw new Error('TURSO_DATABASE_URL is required');
-  if (!authToken) throw new Error('TURSO_AUTH_TOKEN is required');
+  
+  if (!rawUrl) {
+    console.error('[DB] ❌ TURSO_DATABASE_URL is NOT set. Available env keys:', Object.keys(process.env).filter(k => k.startsWith('TURSO')).join(', ') || '(none)');
+    throw new Error('TURSO_DATABASE_URL is required');
+  }
+  if (!authToken) {
+    console.error('[DB] ❌ TURSO_AUTH_TOKEN is NOT set. Available env keys:', Object.keys(process.env).filter(k => k.startsWith('TURSO')).join(', ') || '(none)');
+    throw new Error('TURSO_AUTH_TOKEN is required');
+  }
 
   // Convert libsql:// to https://
   const httpUrl = rawUrl.replace('libsql://', 'https://');
+  console.log(`[DB] Config OK → ${httpUrl.substring(0, 40)}... token=${authToken.substring(0, 8)}...`);
   return { httpUrl, authToken };
 }
 
@@ -82,21 +90,40 @@ type PipelineRequest =
 
 async function pipeline(requests: PipelineRequest[]): Promise<TursoPipelineResponse> {
   const { httpUrl, authToken } = getConfig();
+  const url = `${httpUrl}/v2/pipeline`;
+  const sqlPreview = requests
+    .filter(r => r.type === 'execute')
+    .map(r => (r as { type: 'execute'; stmt: { sql: string } }).stmt.sql.substring(0, 80))
+    .join(' | ');
   
-  const res = await fetch(`${httpUrl}/v2/pipeline`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ requests }),
-  });
+  const startMs = Date.now();
+  console.log(`[DB] Pipeline → ${requests.filter(r => r.type === 'execute').length} stmt(s): ${sqlPreview}`);
+  
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ requests }),
+    });
+  } catch (fetchError) {
+    const elapsed = Date.now() - startMs;
+    console.error(`[DB] ❌ Fetch FAILED after ${elapsed}ms → ${url}`, fetchError);
+    throw fetchError;
+  }
+
+  const elapsed = Date.now() - startMs;
 
   if (!res.ok) {
     const text = await res.text();
+    console.error(`[DB] ❌ Turso HTTP ${res.status} after ${elapsed}ms: ${text.substring(0, 500)}`);
     throw new Error(`Turso HTTP error ${res.status}: ${text}`);
   }
 
+  console.log(`[DB] ✅ Pipeline OK (${elapsed}ms, status=${res.status})`);
   return res.json();
 }
 
@@ -109,10 +136,13 @@ async function executeRaw(sql: string, args: InValue[] = []): Promise<ResultSet>
 
   const first = resp.results[0];
   if (first.type === 'error') {
-    throw new Error(`SQL Error: ${first.error?.message || 'Unknown'}`);
+    console.error(`[DB] ❌ SQL Error for query: ${sql.substring(0, 120)}`, first.error);
+    throw new Error(`SQL Error: ${first.error?.message || 'Unknown'} (code: ${first.error?.code || '?'})`);
   }
 
   const result = first.response!.result;
+  const rowCount = result.rows.length;
+  console.log(`[DB] Query returned ${rowCount} row(s), ${result.affected_row_count} affected`);
   return {
     columns: result.cols.map(c => c.name),
     rows: result.rows.map(row => rowToObject(result.cols, row)),
@@ -166,6 +196,7 @@ export async function batch(statements: Array<{ sql: string; args?: InValue[] }>
 async function ensureSchema() {
   if (schemaInitialized) return;
   schemaInitialized = true; // Set early to prevent recursion
+  console.log('[DB] 🔧 Schema initialization starting...');
 
   try {
     const stmts = [
@@ -224,8 +255,10 @@ async function ensureSchema() {
       { type: 'close' },
     ];
     await pipeline(settingRequests);
+    console.log('[DB] ✅ Schema initialization complete');
   } catch (err) {
     schemaInitialized = false; // Allow retry on failure
+    console.error('[DB] ❌ Schema initialization FAILED:', err);
     throw err;
   }
 }

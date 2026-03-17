@@ -1,4 +1,4 @@
-import { getOne, getAll } from '@/lib/db';
+import { getOne, getAll, execute } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -43,5 +43,30 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   } catch (error) {
     console.error('Profile fetch error:', error);
     return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+
+    const profile = await getOne<{ username: string }>('SELECT username FROM profiles WHERE id = ?', [Number(id)]);
+    if (!profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    }
+
+    // Reset any lead pointing to this profile so it can be re-fetched
+    await execute(
+      "UPDATE leads SET profile_id = NULL, fetch_status = 'pending', updated_at = datetime('now') WHERE username = ?",
+      [profile.username]
+    );
+
+    // Delete profile — cascades to media, analysis_results, verified_profiles
+    await execute('DELETE FROM profiles WHERE id = ?', [Number(id)]);
+
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    console.error('Profile delete error:', error);
+    return NextResponse.json({ error: 'Failed to delete profile' }, { status: 500 });
   }
 }

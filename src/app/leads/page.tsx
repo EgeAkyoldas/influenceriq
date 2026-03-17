@@ -92,8 +92,8 @@ export default function LeadsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const batchPollRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchLeads = useCallback(async (page = 1) => {
-    setLoading(true);
+  const fetchLeads = useCallback(async (page = 1, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams({
         page: String(page),
@@ -117,7 +117,7 @@ export default function LeadsPage() {
     } catch (err) {
       console.error('Failed to fetch leads:', err);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [search, nicheFilter, statusFilter, sourceFilter, hqOnly, sortBy, sortDir]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -129,7 +129,7 @@ export default function LeadsPage() {
       const data = await res.json();
       setBatchJob(data.current || null);
       if (data.current?.status === 'running') {
-        fetchLeads(pagination.page);
+        fetchLeads(pagination.page, true); // silent refresh — no loading spinner
       }
     } catch (err) {
       console.error('Batch status error:', err);
@@ -159,6 +159,7 @@ export default function LeadsPage() {
       if (res.ok) {
         setImportResult(data);
         fetchLeads();
+        if (data.imported > 0) startBatch();
       } else {
         alert(`Import failed: ${data.error}`);
       }
@@ -219,10 +220,11 @@ export default function LeadsPage() {
 
   const addLead = async () => {
     if (!newUsername.trim()) return;
-    await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: newUsername.trim() }) });
+    const res = await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: newUsername.trim() }) });
     setNewUsername('');
     setShowAddModal(false);
     fetchLeads(pagination.page);
+    if (res.ok) startBatch();
   };
 
   const toggleAll = () => {
@@ -402,7 +404,8 @@ export default function LeadsPage() {
                   <td className="p-3">
                     <div className="flex items-center gap-2">
                       {lead.profile_pic_url && (
-                        <img src={lead.profile_pic_url} alt="" className="w-7 h-7 rounded-full" />
+                        <img src={lead.profile_pic_url} alt="" className="w-7 h-7 rounded-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       )}
                       <div>
                         <a href={`https://instagram.com/${lead.username}`} target="_blank" rel="noopener noreferrer"

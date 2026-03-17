@@ -161,17 +161,38 @@ async function processBatch(batchId: number) {
       // Cybernetic Upgrade: Exponential/Fatal Backoff Handling
       if (msg.includes('Rate Limit Exceeded') || msg.includes('429')) {
         console.error(`[Batch] 🛑 Fatal Rate Limit encountered on @${lead.username}. Aborting batch job to protect API key.`);
-        // Revert current lead to pending and exit batch
         await execute("UPDATE leads SET fetch_status = 'pending' WHERE id = ?", [lead.id]);
         break;
       }
 
-      await execute(
-        "UPDATE leads SET fetch_status = 'error', error_message = ?, updated_at = datetime('now') WHERE id = ?",
-        [msg, lead.id]
-      );
-      await execute('UPDATE batch_jobs SET processed = processed + 1, errors = errors + 1 WHERE id = ?', [batchId]);
-      console.error(`[Batch] Error fetching @${lead.username}:`, msg);
+      // Fatal: Expired or invalid access token — no point continuing
+      if (msg.includes('Session has expired') || msg.includes('Error validating access token') || msg.includes('Invalid OAuth')) {
+        console.error(`[Batch] 🛑 ACCESS TOKEN EXPIRED. Aborting batch to prevent mass errors. Fix your INSTAGRAM_ACCESS_TOKEN.`);
+        await execute("UPDATE leads SET fetch_status = 'pending' WHERE id = ?", [lead.id]);
+        break;
+      }
+
+      // Unfetchable: user not found, private account, or not a business account
+      const isUnfetchable = msg.includes('not found') || msg.includes('not exist') || 
+        msg.includes('private') || msg.includes('Invalid user') ||
+        msg.includes('username not found') || msg.includes('No user') ||
+        msg.includes('not a Business') || msg.includes('business_discovery');
+      
+      if (isUnfetchable) {
+        await execute(
+          "UPDATE leads SET fetch_status = 'unfetchable', error_message = ?, updated_at = datetime('now') WHERE id = ?",
+          [msg, lead.id]
+        );
+        await execute('UPDATE batch_jobs SET processed = processed + 1, unfetchable = unfetchable + 1 WHERE id = ?', [batchId]);
+        console.log(`[Batch] ⚠️ Unfetchable @${lead.username}: ${msg}`);
+      } else {
+        await execute(
+          "UPDATE leads SET fetch_status = 'error', error_message = ?, updated_at = datetime('now') WHERE id = ?",
+          [msg, lead.id]
+        );
+        await execute('UPDATE batch_jobs SET processed = processed + 1, errors = errors + 1 WHERE id = ?', [batchId]);
+        console.error(`[Batch] ❌ Error fetching @${lead.username}: ${msg}`);
+      }
     }
   }
 

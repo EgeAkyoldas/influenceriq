@@ -9,7 +9,7 @@ import {
   Search, Filter, ChevronUp, ChevronDown, ExternalLink, ArrowUpDown,
   Flame, Drama, GitMerge, Swords, Zap, Crown, Layers, Mountain,
   Handshake, RefreshCw, BookOpen, HeartHandshake, Dumbbell, Sword, Anvil, TreePine,
-  BarChart2, LayoutList, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight
+  BarChart2, LayoutList, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Trash2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -94,6 +94,8 @@ export default function CandidatesPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [availableSources, setAvailableSources] = useState<Array<{ source: string; count: number }>>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
 
   const fetchProfiles = useCallback(async () => {
     setLoading(true);
@@ -147,6 +149,41 @@ export default function CandidatesPage() {
       setFilter('sortBy', col);
       setFilter('sortOrder', 'DESC');
     }
+  };
+
+  const toggleOne = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected(prev => prev.size === profiles.length && profiles.length > 0
+      ? new Set()
+      : new Set(profiles.map(p => p.id))
+    );
+  };
+
+  const deleteOne = async (id: number) => {
+    await fetch(`/api/profiles/${id}`, { method: 'DELETE' });
+    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+    fetchProfiles();
+  };
+
+  const deleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} candidate${selected.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    await fetch('/api/profiles', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selected) }) });
+    setSelected(new Set());
+    setSelectMode(false);
+    fetchProfiles();
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
   };
 
   const SortIcon = ({ col }: { col: string }) => {
@@ -276,6 +313,25 @@ export default function CandidatesPage() {
                 Reset
               </Button>
 
+              {selectMode ? (
+                <>
+                  {selected.size > 0 && (
+                    <Button variant="destructive" size="sm" className="h-9 gap-1.5" onClick={deleteSelected}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete ({selected.size})
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="h-9" onClick={exitSelectMode}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setSelectMode(true)}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Select
+                </Button>
+              )}
+
               <span className="text-sm text-muted-foreground ml-auto">
                 {pagination.total} profiles
               </span>
@@ -327,6 +383,16 @@ export default function CandidatesPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      {selectMode && (
+                        <TableHead className="w-10">
+                          <input
+                            type="checkbox"
+                            checked={selected.size === profiles.length && profiles.length > 0}
+                            onChange={toggleAll}
+                            className="accent-violet-500"
+                          />
+                        </TableHead>
+                      )}
                       <TableHead className="w-[220px]">Profile</TableHead>
                       <TableHead className="cursor-pointer" onClick={() => handleSort('followers_count')}>
                         <span className="flex items-center">Followers <SortIcon col="followers_count" /></span>
@@ -351,7 +417,17 @@ export default function CandidatesPage() {
                     {profiles.map(p => {
                       const combo = getCombo(p.primary_cluster, p.secondary_cluster);
                       return (
-                        <TableRow key={p.id} className="hover:bg-muted/50 transition-colors">
+                        <TableRow key={p.id} className={`hover:bg-muted/50 transition-colors ${selectMode && selected.has(p.id) ? 'bg-primary/5' : ''}`}>
+                          {selectMode && (
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selected.has(p.id)}
+                                onChange={() => toggleOne(p.id)}
+                                className="accent-violet-500"
+                              />
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Link href={`/candidates/${p.id}`} className="flex items-center gap-3 group cursor-pointer">
                               <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden relative ring-1 ring-transparent group-hover:ring-primary/40 transition-all">
@@ -500,11 +576,23 @@ export default function CandidatesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Link href={`/candidates/${p.id}`}>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <ExternalLink className="w-4 h-4" />
-                              </Button>
-                            </Link>
+                            <div className="flex items-center gap-1">
+                              <Link href={`/candidates/${p.id}`}>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <ExternalLink className="w-4 h-4" />
+                                </Button>
+                              </Link>
+                              {selectMode && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                  onClick={() => deleteOne(p.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );

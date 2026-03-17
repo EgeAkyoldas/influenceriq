@@ -31,8 +31,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ use
       });
     }
 
-    // Fallback: redirect to original Instagram URL if no DB data
-    if (profile.profile_pic_url && profile.profile_pic_url.startsWith('http')) {
+    // Fallback: redirect to original URL if no DB data
+    // Skip Instagram CDN URLs (they expire with 403) and self-referencing /api/avatars/ URLs
+    if (
+      profile.profile_pic_url &&
+      profile.profile_pic_url.startsWith('http') &&
+      !profile.profile_pic_url.includes('cdninstagram.com') &&
+      !profile.profile_pic_url.includes('instagram.com')
+    ) {
       return NextResponse.redirect(profile.profile_pic_url);
     }
 

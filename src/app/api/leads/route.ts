@@ -2,6 +2,8 @@ import { getOne, getAll, execute, type InValue } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
+  const startMs = Date.now();
+  console.log('[Leads API] GET request received');
   try {
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
@@ -14,6 +16,8 @@ export async function GET(req: NextRequest) {
     const hqOnly = searchParams.get('hq_only') === 'true';
     const sortBy = searchParams.get('sort_by') || 'created_at';
     const sortDir = searchParams.get('sort_dir') === 'asc' ? 'ASC' : 'DESC';
+
+    console.log(`[Leads API] Params: page=${page}, limit=${limit}, search="${search}", niche="${niche}", status="${fetchStatus}", source="${source}"`);
 
     let where = 'WHERE 1=1';
     const params: InValue[] = [];
@@ -41,18 +45,26 @@ export async function GET(req: NextRequest) {
     const allowedSorts = ['created_at', 'username', 'csv_niche', 'csv_hq_score', 'fetch_status', 'csv_followers_range'];
     const safeSort = allowedSorts.includes(sortBy) ? sortBy : 'created_at';
 
+    console.log('[Leads API] Running count query...');
     const countResult = await getOne<{ count: number }>(`SELECT COUNT(*) as count FROM leads l ${where}`, params);
+    console.log(`[Leads API] Count result: ${countResult?.count ?? 'null'}`);
+
+    console.log('[Leads API] Running main query...');
     const leads = await getAll(
       `SELECT l.*, p.followers_count, p.full_name, p.profile_pic_url
        FROM leads l LEFT JOIN profiles p ON l.profile_id = p.id
        ${where} ORDER BY l.${safeSort} ${sortDir} LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
+    console.log(`[Leads API] Fetched ${leads.length} leads`);
 
     // Get niche distribution
     const niches = await getAll('SELECT csv_niche, COUNT(*) as count FROM leads GROUP BY csv_niche ORDER BY count DESC');
     const statusCounts = await getAll('SELECT fetch_status, COUNT(*) as count FROM leads GROUP BY fetch_status');
     const sourceCounts = await getAll('SELECT source, COUNT(*) as count FROM leads GROUP BY source ORDER BY count DESC');
+
+    const elapsed = Date.now() - startMs;
+    console.log(`[Leads API] ✅ Response ready in ${elapsed}ms (${leads.length} leads, total=${countResult?.count})`);
 
     return NextResponse.json({
       data: leads,
@@ -60,8 +72,11 @@ export async function GET(req: NextRequest) {
       filters: { niches, statusCounts, sourceCounts },
     });
   } catch (error) {
-    console.error('Leads list error:', error);
-    return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 });
+    const elapsed = Date.now() - startMs;
+    console.error(`[Leads API] ❌ FAILED after ${elapsed}ms:`, error);
+    console.error(`[Leads API] Error name: ${(error as Error).name}, message: ${(error as Error).message}`);
+    console.error(`[Leads API] Stack:`, (error as Error).stack);
+    return NextResponse.json({ error: 'Failed to fetch leads', details: (error as Error).message }, { status: 500 });
   }
 }
 

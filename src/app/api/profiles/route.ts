@@ -1,4 +1,4 @@
-import { getOne, getAll } from '@/lib/db';
+import { getOne, getAll, execute } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
@@ -142,5 +142,38 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('Profiles list error:', error);
     return NextResponse.json({ error: 'Failed to fetch profiles' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { ids } = (await req.json()) as { ids: number[] };
+    if (!ids || ids.length === 0) {
+      return NextResponse.json({ error: 'ids array is required' }, { status: 400 });
+    }
+
+    // Fetch usernames to reset leads
+    const placeholders = ids.map(() => '?').join(',');
+    const profiles = await getAll<{ username: string }>(
+      `SELECT username FROM profiles WHERE id IN (${placeholders})`,
+      ids
+    );
+    const usernames = profiles.map(p => p.username);
+
+    if (usernames.length > 0) {
+      const uph = usernames.map(() => '?').join(',');
+      await execute(
+        `UPDATE leads SET profile_id = NULL, fetch_status = 'pending', updated_at = datetime('now') WHERE username IN (${uph})`,
+        usernames
+      );
+    }
+
+    // Delete profiles — cascades to media, analysis_results, verified_profiles
+    const result = await execute(`DELETE FROM profiles WHERE id IN (${placeholders})`, ids);
+
+    return NextResponse.json({ deleted: result.rowsAffected });
+  } catch (error) {
+    console.error('Profiles bulk delete error:', error);
+    return NextResponse.json({ error: 'Failed to delete profiles' }, { status: 500 });
   }
 }

@@ -123,18 +123,25 @@ export async function fetchProfileByUsername(username: string): Promise<{
   profile: GraphApiProfile;
   media: GraphApiMedia[];
 } | null> {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+  // Token rotation: try primary, then secondary
+  const tokens = [
+    process.env.INSTAGRAM_ACCESS_TOKEN,
+    process.env.INSTAGRAM_ACCESS_TOKEN_2,
+  ].filter(Boolean) as string[];
   const accountId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID;
   
-  if (!token || !accountId) {
+  if (tokens.length === 0 || !accountId) {
     throw new Error('Instagram API credentials not configured. Set INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ACCOUNT_ID in .env.local');
   }
 
-  // Debug: show which token is loaded
-  const tokenPreview = `${token.substring(0, 10)}...${token.substring(token.length - 10)}`;
-  console.log(`[Instagram] 🔑 Token: ${tokenPreview} (len=${token.length})`);
+  // Try each token
+  for (const token of tokens) {
 
-  return rateLimiter.add(async () => {
+    // Debug: show which token is loaded
+    const tokenPreview = `${token.substring(0, 10)}...${token.substring(token.length - 10)}`;
+    console.log(`[Instagram] 🔑 Trying token: ${tokenPreview} (len=${token.length})`);
+
+    const result = await rateLimiter.add(async () => {
     const profileFields = 'username,name,biography,followers_count,follows_count,media_count,profile_picture_url,website';
     const mediaFields = 'id,media_type,caption,like_count,comments_count,timestamp,permalink';
 
@@ -149,6 +156,13 @@ export async function fetchProfileByUsername(username: string): Promise<{
       if ((data as GraphApiError).error) {
         const error = data as GraphApiError;
         console.error(`[Instagram] API error for @${username}: [${error.error.code}] ${error.error.message}`);
+        
+        // Token expired/invalid — signal to try next token
+        if (error.error.code === 190 || error.error.message.includes('Session has expired') || error.error.message.includes('Error validating access token')) {
+          console.log(`[Instagram] ⚠️ Token expired/invalid, will try next token...`);
+          return 'TOKEN_EXPIRED' as unknown as null; // sentinel value
+        }
+        
         if (error.error.code === 17 || error.error.code === 110 || error.error.code === 4 || error.error.code === 32 || error.error.type === 'OAuthException') {
           // Meta API failed for valid reason, fallback to RapidAPI
           console.log(`[Instagram] Fallback triggered for @${username} due to API error.`);
@@ -156,7 +170,6 @@ export async function fetchProfileByUsername(username: string): Promise<{
           if (fallbackData) return fallbackData;
         }
         if (error.error.code === 17 || error.error.code === 110) {
-          // User not found or invalid user via both APIs
           return null;
         }
         throw new Error(error.error.message);
@@ -189,12 +202,25 @@ export async function fetchProfileByUsername(username: string): Promise<{
     return { profile, media };
     } catch (err: unknown) {
       const error = err as Error;
-      console.error(`[Instagram] ⚠️ fetchWithRetry failed for @${username}: ${error.message}. Triggering fallback...`);
-      const fallbackData = await fetchProfileFromRapidAPI(username);
-      if (fallbackData) return fallbackData;
-      throw error; // if fallback also fails or isn't available
+      console.error(`[Instagram] ⚠️ fetchWithRetry failed for @${username}: ${error.message}. Will try next token...`);
+      return 'TOKEN_EXPIRED' as unknown as null; // signal to try next token
     }
-  });
+    });
+
+    // If this token worked (didn't return sentinel), use the result
+    if (result !== ('TOKEN_EXPIRED' as unknown)) {
+      return result;
+    }
+    console.log(`[Instagram] Token failed, trying next...`);
+  }
+
+  // All tokens exhausted, try RapidAPI as final fallback
+  console.log(`[Instagram] All tokens exhausted for @${username}. Final fallback to RapidAPI...`);
+  const fallbackData = await fetchProfileFromRapidAPI(username);
+  if (fallbackData) return fallbackData;
+  
+  // RapidAPI also failed — return null (unfetchable) instead of throwing expired token error
+  return null;
 }
 
 export async function fetchProfileById(userId: string): Promise<GraphApiProfile | null> {
