@@ -72,6 +72,8 @@ interface ProfileDetail {
     timestamp: string;
   }>;
   lead_source: string | null;
+  has_been_reverified: boolean;
+  last_reverified_at: string | null;
 }
 
 interface EditorDecision {
@@ -382,10 +384,29 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
         <Card className="overflow-hidden">
           <CardContent>
             <div className="flex flex-col sm:flex-row items-start gap-6 relative">
-              {/* Approval status badge — top right */}
-              {profile.is_approved !== null && (
-                <div className="absolute top-0 right-0">
-                  {profile.is_approved === 1 ? (
+              {/* Top-right badges: reverify + approval + source */}
+              <div className="absolute top-0 right-0 flex flex-col items-end gap-1.5">
+                {profile.has_been_reverified && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-500/30 text-violet-300 cursor-help">
+                        <RotateCcw size={13} />
+                        <span className="text-xs font-medium">Re-analyzed</span>
+                        {profile.last_reverified_at && (
+                          <span className="text-xs opacity-60">· {new Date(profile.last_reverified_at).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="px-2 py-1">
+                      <p className="text-xs text-violet-300">
+                        Analysis updated via reverify
+                        {profile.last_reverified_at && ` on ${new Date(profile.last_reverified_at).toLocaleString()}`}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {profile.is_approved !== null && (
+                  profile.is_approved === 1 ? (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
                       <ShieldCheck size={13} />
                       <span className="text-xs font-medium">Approved</span>
@@ -407,9 +428,14 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                         </p>
                       </TooltipContent>
                     </Tooltip>
-                  )}
-                </div>
-              )}
+                  )
+                )}
+                {profile.lead_source && profile.lead_source !== 'csv_import' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-medium">
+                    🆕 {profile.lead_source}
+                  </span>
+                )}
+              </div>
               {/* Avatar */}
               <div className="w-20 h-20 rounded-2xl bg-muted flex items-center justify-center overflow-hidden shrink-0 relative">
                 {profile.profile_pic_url && (
@@ -477,13 +503,6 @@ export default function ProfileDetailPage({ params }: { params: Promise<{ id: st
                   </a>
                 )}
 
-                {profile.lead_source && profile.lead_source !== 'csv_import' && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-medium">
-                      🆕 Source: {profile.lead_source}
-                    </span>
-                  </div>
-                )}
 
 
               </div>

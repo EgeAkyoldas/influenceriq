@@ -9,7 +9,8 @@ import {
   Search, Filter, ChevronUp, ChevronDown, ExternalLink, ArrowUpDown,
   Flame, Drama, GitMerge, Swords, Zap, Crown, Layers, Mountain,
   Handshake, RefreshCw, BookOpen, HeartHandshake, Dumbbell, Sword, Anvil, TreePine,
-  BarChart2, LayoutList, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Trash2
+  BarChart2, LayoutList, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Trash2,
+  RotateCcw, Square, Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,7 @@ interface ProfileRow {
   tier: string | null;
   monetization_signals: string[];
   is_verified: boolean;
+  has_been_reverified: boolean;
   is_approved: number | null;  // 0 = rejected, 1 = approved, null = not analyzed
   rejection_reason: string | null;
   dynamic_tags: string[];
@@ -84,6 +86,16 @@ interface AnalyticsData {
   matrix:    { tier: string; cluster: string; count: number }[];
 }
 
+interface ReverifyJob {
+  id: number;
+  total_profiles: number;
+  processed: number;
+  errors: number;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CandidatesPage() {
   const { filters, setFilter, resetFilters } = useAppStore();
@@ -96,6 +108,8 @@ export default function CandidatesPage() {
   const [availableSources, setAvailableSources] = useState<Array<{ source: string; count: number }>>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
+  const [reverifyJob, setReverifyJob] = useState<ReverifyJob | null>(null);
+  const reverifyPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchProfiles = useCallback(async () => {
     setLoading(true);
@@ -184,6 +198,49 @@ export default function CandidatesPage() {
   const exitSelectMode = () => {
     setSelectMode(false);
     setSelected(new Set());
+  };
+
+  // Batch reverify polling
+  const pollReverifyStatus = useCallback(async () => {
+    const res = await fetch('/api/profiles/batch-reverify');
+    const data = await res.json();
+    const job: ReverifyJob | null = data.current || (data.history?.[0]?.status === 'running' ? data.history[0] : null);
+    setReverifyJob(job ?? data.history?.[0] ?? null);
+    if (!job || job.status !== 'running') {
+      if (reverifyPollRef.current) clearInterval(reverifyPollRef.current);
+      reverifyPollRef.current = null;
+      if (job?.status === 'complete') fetchProfiles();
+    }
+  }, [fetchProfiles]);
+
+  useEffect(() => {
+    pollReverifyStatus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startBatchReverify = async () => {
+    if (!confirm('Re-analyze ALL fetched profiles with AI? This will update tiers, clusters, and scores. Snapshots of current analysis will be saved.')) return;
+    const res = await fetch('/api/profiles/batch-reverify', { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error || 'Failed to start batch reverify');
+      return;
+    }
+    await pollReverifyStatus();
+    reverifyPollRef.current = setInterval(pollReverifyStatus, 3000);
+  };
+
+  const cancelBatchReverify = async () => {
+    if (!reverifyJob) return;
+    await fetch('/api/profiles/batch-reverify', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: reverifyJob.id }) });
+    await pollReverifyStatus();
+  };
+
+  const resetReverifyState = async () => {
+    if (!confirm('Clear all reverify history? All profiles will be marked as un-reverified and the next batch will start from scratch.')) return;
+    await fetch('/api/profiles/batch-reverify', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reset' }) });
+    await pollReverifyStatus();
+    fetchProfiles();
   };
 
   const SortIcon = ({ col }: { col: string }) => {
@@ -332,7 +389,54 @@ export default function CandidatesPage() {
                 </Button>
               )}
 
-              <span className="text-sm text-muted-foreground ml-auto">
+              {/* Batch Reverify */}
+              {reverifyJob?.status === 'running' ? (
+                <div className="flex items-center gap-2 ml-auto">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+                  <span className="text-xs text-violet-400 font-medium">
+                    Reverifying {reverifyJob.processed}/{reverifyJob.total_profiles}
+                  </span>
+                  <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-violet-500 rounded-full transition-all"
+                      style={{ width: `${reverifyJob.total_profiles > 0 ? (reverifyJob.processed / reverifyJob.total_profiles) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-red-400 hover:text-red-300" onClick={cancelBatchReverify}>
+                    <Square className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 text-violet-400 border-violet-500/30 hover:bg-violet-500/10"
+                    onClick={startBatchReverify}
+                    title="Re-analyze un-reverified profiles with AI"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Batch Reverify
+                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 p-0 text-muted-foreground hover:text-red-400"
+                        onClick={resetReverifyState}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="px-2 py-1">
+                      <p className="text-xs">Reset reverify history (re-run all)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
+
+              <span className="text-sm text-muted-foreground">
                 {pagination.total} profiles
               </span>
             </div>
@@ -459,6 +563,18 @@ export default function CandidatesPage() {
                                     <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
                                       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                     </svg>
+                                  )}
+                                  {p.has_been_reverified && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-violet-500/20 border border-violet-500/40 cursor-help shrink-0">
+                                          <RotateCcw className="w-2 h-2 text-violet-400" />
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="px-2 py-1">
+                                        <p className="text-xs text-violet-300">AI re-analyzed</p>
+                                      </TooltipContent>
+                                    </Tooltip>
                                   )}
                                   {p.lead_source && p.lead_source !== 'csv_import' && (
                                     <Tooltip>

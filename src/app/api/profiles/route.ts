@@ -89,14 +89,19 @@ export async function GET(req: NextRequest) {
     const total = countResult?.total ?? 0;
 
     const dataQuery = `
-      SELECT p.*, 
-        a.primary_cluster, a.secondary_cluster, a.relevance_score, 
+      SELECT p.*,
+        a.primary_cluster, a.secondary_cluster, a.relevance_score,
         a.authority_score, a.engagement_rate, a.monetization_signals, a.dynamic_tags,
         a.audience_alignment, a.content_style, a.content_summary, a.analyzed_at,
         COALESCE(v.editor_tier, v.tier, a.tier) as tier,
         COALESCE(a.is_approved, v.is_approved) as is_approved,
         COALESCE(a.rejection_reason, v.rejection_reason) as rejection_reason,
-        l.source as lead_source
+        l.source as lead_source,
+        EXISTS (
+          SELECT 1 FROM analysis_snapshots s
+          WHERE s.profile_id = p.id
+            AND s.snapshot_reason IN ('reverify', 'batch_reverify')
+        ) as has_been_reverified
       FROM profiles p
       LEFT JOIN analysis_results a ON a.profile_id = p.id
       LEFT JOIN verified_profiles v ON v.profile_id = p.id
@@ -114,6 +119,7 @@ export async function GET(req: NextRequest) {
       dynamic_tags: p.dynamic_tags ? JSON.parse(p.dynamic_tags as string) : [],
       content_style: (p.content_style as string) || 'Unknown',
       is_verified: Boolean(p.is_verified),
+      has_been_reverified: Boolean(p.has_been_reverified),
       is_approved: p.is_approved === null || p.is_approved === undefined ? null : (p.is_approved === 1 ? 1 : 0),
       rejection_reason: (p.rejection_reason as string) || null,
     }));

@@ -1,6 +1,6 @@
 import { execute, getOne, getAll } from '@/lib/db';
 import { fetchProfileByUsername } from './instagram-client';
-import { analyzeProfile } from './ai-analyzer';
+import { analyzeProfile, type EditorExample } from './ai-analyzer';
 import { applyPreFilters } from './pre-filter';
 import type { FilterSettings, Research } from '@/types';
 
@@ -47,6 +47,13 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
     return;
   }
 
+  // Load recent editor decisions for AI few-shot learning (same as reverify)
+  const editorExamples = await getAll<EditorExample>(`
+    SELECT username, previous_tier, new_tier, editor_reason, editor_note
+    FROM editor_decision_logs
+    ORDER BY created_at DESC LIMIT 10
+  `);
+
   // Update status to fetching
   await execute('UPDATE research SET status = ? WHERE id = ?', ['fetching', researchId]);
 
@@ -62,11 +69,22 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         continue;
       }
 
-      // 2. Store profile
+      // 2. Store profile — use ON CONFLICT DO UPDATE to preserve profile id (not INSERT OR REPLACE)
       const { profile, media } = result;
       const profileResult = await execute(`
-        INSERT OR REPLACE INTO profiles (instagram_id, username, full_name, bio, followers_count, following_count, media_count, profile_pic_url, website, is_verified, research_id)
+        INSERT INTO profiles (instagram_id, username, full_name, bio, followers_count, following_count, media_count, profile_pic_url, website, is_verified, research_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(instagram_id) DO UPDATE SET
+          username = excluded.username,
+          full_name = excluded.full_name,
+          bio = excluded.bio,
+          followers_count = excluded.followers_count,
+          following_count = excluded.following_count,
+          media_count = excluded.media_count,
+          profile_pic_url = excluded.profile_pic_url,
+          website = excluded.website,
+          is_verified = excluded.is_verified,
+          fetched_at = datetime('now')
       `, [
         profile.id,
         profile.username || username,
@@ -80,7 +98,18 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         profile.is_verified ? 1 : 0,
         researchId
       ]);
-      const profileId = Number(profileResult.lastInsertRowid);
+
+      // Resolve profile id — ON CONFLICT UPDATE doesn't return a rowid, so fall back to SELECT
+      let profileId = Number(profileResult.lastInsertRowid);
+      if (!profileId) {
+        const existing = await getOne<{ id: number }>('SELECT id FROM profiles WHERE instagram_id = ?', [profile.id]);
+        profileId = existing?.id ?? 0;
+      }
+      if (!profileId) {
+        console.error(`Could not resolve profile id for @${username}, skipping`);
+        continue;
+      }
+
       profilesFetched++;
 
       // 3. Store media
@@ -123,16 +152,37 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
 
       if (!filterResult.passed) {
         console.log(`Profile @${username} filtered out: ${filterResult.reasons.join(', ')}`);
+        const filterReason = `Filtered: ${filterResult.reasons.join('; ')}`;
         await execute(`
-          INSERT OR REPLACE INTO analysis_results (profile_id, primary_cluster, relevance_score, authority_score, engagement_rate, tier, content_summary)
-          VALUES (?, 'mindset', 0, 0, ?, 'D', ?)
-        `, [profileId, engagementRate, `Filtered: ${filterResult.reasons.join('; ')}`]);
+          INSERT INTO analysis_results
+            (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score,
+             engagement_rate, monetization_signals, risk_flags, dynamic_tags, audience_alignment,
+             tier, tier_reason, content_summary, content_style, is_approved, rejection_reason)
+          VALUES (?, 'mindset', NULL, 0, 0, ?, '[]', '[]', '[]', 0, 'D', ?, ?, 'Mixed', 0, ?)
+          ON CONFLICT(profile_id) DO UPDATE SET
+            tier = 'D',
+            tier_reason = excluded.tier_reason,
+            content_summary = excluded.content_summary,
+            rejection_reason = excluded.rejection_reason,
+            is_approved = 0,
+            analyzed_at = datetime('now')
+        `, [profileId, engagementRate, filterReason, filterReason, filterReason]);
+
+        await execute(`
+          INSERT INTO verified_profiles (profile_id, tier, is_approved, rejection_reason, verified_at)
+          VALUES (?, 'D', 0, ?, datetime('now'))
+          ON CONFLICT(profile_id) DO UPDATE SET
+            tier = 'D', is_approved = 0,
+            rejection_reason = excluded.rejection_reason,
+            verified_at = datetime('now')
+        `, [profileId, filterReason]);
+
         profilesAnalyzed++;
         await execute('UPDATE research SET profiles_analyzed = ? WHERE id = ?', [profilesAnalyzed, researchId]);
         continue;
       }
 
-      // 5. AI Analysis
+      // 5. AI Analysis — include editorExamples for calibration (same as reverify)
       await execute('UPDATE research SET status = ? WHERE id = ?', ['analyzing', researchId]);
 
       const analysis = await analyzeProfile({
@@ -147,23 +197,43 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         avg_likes: avgLikes,
         avg_comments: avgComments,
         engagement_rate: engagementRate,
+        editorExamples: editorExamples.length > 0 ? editorExamples.slice(0, 5) : undefined,
       });
 
-      // 6. Store analysis
+      // 6. Store analysis — full field set including risk_flags and dynamic_tags
       await execute(`
-        INSERT OR REPLACE INTO analysis_results
+        INSERT INTO analysis_results
           (profile_id, primary_cluster, secondary_cluster, relevance_score, authority_score,
-           engagement_rate, monetization_signals, audience_alignment, tier, tier_reason,
-           content_summary, content_style, is_approved, rejection_reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           engagement_rate, monetization_signals, risk_flags, dynamic_tags, audience_alignment,
+           tier, tier_reason, content_summary, content_style, is_approved, rejection_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(profile_id) DO UPDATE SET
+          primary_cluster = excluded.primary_cluster,
+          secondary_cluster = excluded.secondary_cluster,
+          relevance_score = excluded.relevance_score,
+          authority_score = excluded.authority_score,
+          engagement_rate = excluded.engagement_rate,
+          monetization_signals = excluded.monetization_signals,
+          risk_flags = excluded.risk_flags,
+          dynamic_tags = excluded.dynamic_tags,
+          audience_alignment = excluded.audience_alignment,
+          tier = excluded.tier,
+          tier_reason = excluded.tier_reason,
+          content_summary = excluded.content_summary,
+          content_style = excluded.content_style,
+          is_approved = excluded.is_approved,
+          rejection_reason = excluded.rejection_reason,
+          analyzed_at = datetime('now')
       `, [
         profileId,
         analysis.primary_cluster,
-        analysis.secondary_cluster,
+        analysis.secondary_cluster ?? null,
         analysis.relevance_score,
         analysis.authority_score,
         engagementRate,
-        JSON.stringify(analysis.monetization_signals),
+        JSON.stringify(analysis.monetization_signals || []),
+        JSON.stringify(analysis.risk_flags || []),
+        JSON.stringify(analysis.dynamic_tags || []),
         analysis.audience_alignment,
         analysis.tier,
         analysis.tier_reason,
@@ -172,6 +242,17 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         analysis.is_approved ? 1 : 0,
         analysis.rejection_reason ?? null
       ]);
+
+      // 7. Update verified_profiles (same as batch)
+      await execute(`
+        INSERT INTO verified_profiles (profile_id, tier, is_approved, rejection_reason, verified_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(profile_id) DO UPDATE SET
+          tier = excluded.tier,
+          is_approved = excluded.is_approved,
+          rejection_reason = excluded.rejection_reason,
+          verified_at = datetime('now')
+      `, [profileId, analysis.tier, analysis.is_approved ? 1 : 0, analysis.rejection_reason ?? null]);
 
       profilesAnalyzed++;
       await execute('UPDATE research SET profiles_analyzed = ? WHERE id = ?', [profilesAnalyzed, researchId]);
