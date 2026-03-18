@@ -15,7 +15,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ use
     );
 
     if (!profile) {
-      return new NextResponse(null, { status: 404 });
+      const initial = username[0]?.toUpperCase() ?? '?';
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="12" fill="#27272a"/><text x="40" y="52" font-family="system-ui,sans-serif" font-size="32" font-weight="600" fill="#a1a1aa" text-anchor="middle">${initial}</text></svg>`;
+      return new NextResponse(svg, { status: 200, headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600' } });
     }
 
     // If we have base64 avatar data, serve it as image
@@ -42,7 +44,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ use
       return NextResponse.redirect(profile.profile_pic_url);
     }
 
-    return new NextResponse(null, { status: 404 });
+    // No avatar available — return a neutral placeholder SVG (avoids 404 console errors)
+    const initial = username[0]?.toUpperCase() ?? '?';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <rect width="80" height="80" rx="12" fill="#27272a"/>
+  <text x="40" y="52" font-family="system-ui,sans-serif" font-size="32" font-weight="600" fill="#a1a1aa" text-anchor="middle">${initial}</text>
+</svg>`;
+    return new NextResponse(svg, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Cache-Control': 'public, max-age=3600',
+      },
+    });
   } catch (error) {
     console.error('Avatar serve error:', error);
     return new NextResponse(null, { status: 500 });
