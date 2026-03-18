@@ -28,6 +28,7 @@ export interface ClassifierInput {
   avg_likes: number;
   avg_comments: number;
   engagement_rate: number;
+  days_since_last_post?: number;
   editorExamples?: EditorExample[];
 }
 
@@ -58,6 +59,7 @@ ${data.editorExamples.map((e, i) => `${i + 1}. @${e.username}: ${e.previous_tier
 - Avg Likes: ${data.avg_likes.toFixed(0)}
 - Avg Comments: ${data.avg_comments.toFixed(0)}
 - Engagement Rate: ${data.engagement_rate.toFixed(2)}%
+- Days Since Last Post: ${data.days_since_last_post !== undefined ? `${data.days_since_last_post} days ago` : 'Unknown'}
 
 ## Recent Post Captions (last 25):
 ${safeCaptions.map((c, i) => `${i + 1}. ${c}`).join('\n')}
@@ -74,12 +76,20 @@ If ANY of the following is true, assign "Tier D" and set "is_approved" to false 
 ## 🏆 TIER DEFINITIONS AND REQUIREMENTS
 Assign the matching tier by evaluating Followers, Niche, Face-to-camera %, Monetization, and Post cadence.
 
+> **🚨 POSTING FREQUENCY HARD CAPS — applied BEFORE all other tier logic:**
+> These are mandatory minimums. If the creator fails the recency check for a tier, they CANNOT be assigned that tier — drop them to the next tier down and check again.
+> - **S Tier** requires: last post within **14 days** (Days Since Last Post ≤ 14)
+> - **A Tier** requires: last post within **28 days** (Days Since Last Post ≤ 28)
+> - **B Tier** requires: last post within **56 days** (Days Since Last Post ≤ 56)
+> - **C Tier** requires: last post within **56 days** (Days Since Last Post ≤ 56)
+> - If Days Since Last Post > 56 (or Unknown), assign **D Tier** regardless of other signals.
+
 - **S Tier (Perfect Fit)**
   - Niche: STRICTLY Men's dating niche.
   - Followers: 500 - 100,000
   - Content Format: At least 30% of recent content is face-to-camera while talking reels.
   - Monetization: Has obviously monetized (clear coaching offer, funnel, or link).
-  - Posting Frequency: Posting at least 3x a week recently.
+  - Posting Frequency: Posting at least 3x a week AND last post within 14 days.
   - Examples: @ryan_unhinged, @peteonealdating, @alexleon.life, @kingracso, @rorygoodlife, @sbdating._, @madisonsocialcoach, @sheshn94, @datingcoachemi, @seduzionealpha, @datingjutsu, @cristianomungioli, @_nextlevelsocial, @apex.andyy, @datingcoachformen, @mikepickupalpha, @confidencebymike, @silver.wolf.strategies, @mirkmode, @dean_raymond_dating, @mrdanferrari, @everlasting.confidence, @defundsimping, @thedeeceejay, @dylanhunterdating, @realdominicsamuel, @coach_seb_dating, @shaymaxx.x, @czarofdating, @therealbencampbell, @nickoptics, @ovomaksim, @mjgetright_, @crosshimself
 
 - **A Tier (Good Fit)**
@@ -87,7 +97,7 @@ Assign the matching tier by evaluating Followers, Niche, Face-to-camera %, Monet
   - Followers: 100 - 60,000
   - Content Format: At least 10% of recent content is face-to-camera while talking reels.
   - Monetization: Has obviously monetized.
-  - Posting Frequency: Posting at least 1x a week recently.
+  - Posting Frequency: Posting at least 1x a week AND last post within 28 days.
   - Examples: @consultantchris, @claytonolsoncoaching, @realcoachlee, @recoverwithnate, @garrettjwhite, @brayden.steckler, @cj.jelinek, @darrenpreilly, @mindsetmastermike, @gamewithframe, @jonny.wtk, @the.recovering.narcissist, @drmathisk, @ptk_mindset, @newcitymastery, @harrisonj.orr, @officialchrisgoldy, @apex.maximilian, @projectlovern, @seb.bates, @aleksfidurski, @lifeofjayhatcher, @bradleyamartin, @michael_hedgecock, @adam___jackson
 
 - **B Tier (Has Potential)**
@@ -95,7 +105,7 @@ Assign the matching tier by evaluating Followers, Niche, Face-to-camera %, Monet
   - Followers: 100 - 100,000
   - Monetization: Unclear / nonexisting monetization.
   - Content Format: Style might be good but it has too much meme or random stuff, it is not as intentional and coaching oriented.
-  - Posting Frequency: Posting at least 1x a week recently.
+  - Posting Frequency: At least 1 post within 56 days.
   - Examples: @fathers.on.fire, @maxxingwithmack, @asherrwhiteee, @alepuigg, @risewithdhamare, @scorpius._____, @thestevemayhew, @fortify__
 
 - **C Tier (Not very good but still worth talking to)**
@@ -103,14 +113,14 @@ Assign the matching tier by evaluating Followers, Niche, Face-to-camera %, Monet
   - Followers: 10 - 150,000
   - Acceptable Red Flags: Has a photo with his partner in his profile picture, too much stuff about spirituality / alchemy tantra or weird stuff, indian, bio might include jokes or unclear signals, too much profanity, "hood" language.
   - Monetization: Retreats or nonexistant.
-  - Posting Frequency: Has posted at least one in the last 30 days.
+  - Posting Frequency: At least 1 post within 56 days.
   - Examples: @brandon.groux, @evolverelating, @nemanja_sonero, @realbartk, @newfoundawakening, @the.essential.man, @danlunn_, @arestheleader, @theultimategentleman5, @its.tylerjames, @themikeromano, @builtfromwithin.co, @gen6ceo, @the_dating_method_, @mariomindset247, @unhingedsanity_
 
 - **D Tier (Unqualified)**
-  - Niche: Purely fitness coach, or in any other niche. ONLY POV/meme/random. Faceless. Not helping men. >150K followers.
+  - Niche: Purely fitness coach, or in any other niche. ONLY POV/meme/random. Faceless. Not helping men. >150K followers. Last post > 56 days ago.
   - Examples: @zenofmasculinity, @thesuperhuman.diet, @_mickmoves, @_bazunes0, @terinchapman
 
-> **IMPORTANT:** Tier is assigned by evaluating the EXACT criteria rules listed above (Followers, Niche, Formatting, Cadence, Monetization). If they miss S, check if they fit A, B, or C. If none apply, they are D.
+> **IMPORTANT:** Tier is assigned by evaluating the EXACT criteria rules listed above (Followers, Niche, Formatting, Cadence, Monetization). The posting frequency cap must be checked FIRST — if it fails, drop the tier. If they miss S, check if they fit A, B, or C. If none apply, they are D.
 > authority_score (1–10) is a supplementary informational metric only (how authoritative do they speak/look). Do not confuse the two.
 
 ## Content Style Detection
@@ -129,7 +139,7 @@ Inspect the captions carefully and determine the DOMINANT content format. Pick O
 - **audience_alignment** (0–100): How well does the audience overlap with men seeking dating/self-improvement advice?
 - **risk_flags**: List any red flags detected from the data. Use ONLY these exact strings (or empty array if none):
   - "Suspected fake engagement" — engagement rate unusually high (>25%) for follower size
-  - "Very low posting frequency" — fewer than 1 post a month
+  - "Very low posting frequency" — last post was more than 28 days ago
   - "No coaching offer in bio" — unclear/nonexistent monetization
   - "Meme / faceless content" — content is mostly aggregated memes or faceless posts
   - "Audience mismatch" — content targets women or completely irrelevant niche

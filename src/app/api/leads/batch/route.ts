@@ -88,6 +88,10 @@ async function processBatch(batchId: number) {
         const avgComments = media.length > 0 ? totalComments / media.length : 0;
         const engRate = result.profile.followers_count && result.profile.followers_count > 0
           ? ((avgLikes + avgComments) / result.profile.followers_count) * 100 : 0;
+        const lastPostTs = media.length > 0 ? media[0].timestamp : null;
+        const daysSinceLastPost = lastPostTs
+          ? Math.floor((Date.now() - new Date(lastPostTs).getTime()) / 86_400_000)
+          : undefined;
 
         const analysis = await analyzeProfile({
           username: result.profile.username || lead.username,
@@ -101,6 +105,7 @@ async function processBatch(batchId: number) {
           avg_likes: avgLikes,
           avg_comments: avgComments,
           engagement_rate: engRate,
+          days_since_last_post: daysSinceLastPost,
           editorExamples: editorExamples.length > 0 ? editorExamples : undefined,
         });
 

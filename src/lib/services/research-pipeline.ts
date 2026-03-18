@@ -139,6 +139,10 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
       const engagementRate = (profile.followers_count || 0) > 0
         ? ((avgLikes + avgComments) / (profile.followers_count || 1)) * 100
         : 0;
+      const lastPostTs = media.length > 0 ? media[0].timestamp : null;
+      const daysSinceLastPost = lastPostTs
+        ? Math.floor((Date.now() - new Date(lastPostTs).getTime()) / 86_400_000)
+        : undefined;
 
       const filterResult = applyPreFilters({
         followers_count: profile.followers_count || 0,
@@ -197,6 +201,7 @@ export async function runResearchPipeline(researchId: number): Promise<void> {
         avg_likes: avgLikes,
         avg_comments: avgComments,
         engagement_rate: engagementRate,
+        days_since_last_post: daysSinceLastPost,
         editorExamples: editorExamples.length > 0 ? editorExamples.slice(0, 5) : undefined,
       });
 

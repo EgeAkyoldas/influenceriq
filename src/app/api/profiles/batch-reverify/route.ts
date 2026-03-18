@@ -46,6 +46,10 @@ async function processBatchReverify(jobId: number) {
       const avgComments = media.length > 0 ? media.reduce((s, m) => s + (Number(m.comments_count) || 0), 0) / media.length : 0;
       const followersCount = Number(profile.followers_count) || 1;
       const engagementRate = media.length > 0 ? ((avgLikes + avgComments) / followersCount) * 100 : 0;
+      const lastPostTs = media.length > 0 ? media[0].timestamp : null;
+      const daysSinceLastPost = lastPostTs
+        ? Math.floor((Date.now() - new Date(lastPostTs).getTime()) / 86_400_000)
+        : undefined;
 
       // 2. Snapshot current analysis before overwriting
       const currentAnalysis = await getOne<{
@@ -88,6 +92,7 @@ async function processBatchReverify(jobId: number) {
         avg_likes: avgLikes,
         avg_comments: avgComments,
         engagement_rate: engagementRate,
+        days_since_last_post: daysSinceLastPost,
         editorExamples: editorExamples.length > 0 ? editorExamples.slice(0, 5) : undefined,
       });
 

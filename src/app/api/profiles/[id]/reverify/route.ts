@@ -31,6 +31,10 @@ export async function POST(
     const avgComments = media.length > 0 ? media.reduce((s, m) => s + (Number(m.comments_count) || 0), 0) / media.length : 0;
     const followersCount = Number(profile.followers_count) || 1;
     const engagementRate = media.length > 0 ? ((avgLikes + avgComments) / followersCount) * 100 : 0;
+    const lastPostTs = media.length > 0 ? media[0].timestamp : null;
+    const daysSinceLastPost = lastPostTs
+      ? Math.floor((Date.now() - new Date(lastPostTs).getTime()) / 86_400_000)
+      : undefined;
 
     // 3. Fetch current analysis (to snapshot)
     const currentAnalysis = await getOne<{
@@ -83,6 +87,7 @@ export async function POST(
       avg_likes: avgLikes,
       avg_comments: avgComments,
       engagement_rate: engagementRate,
+      days_since_last_post: daysSinceLastPost,
       editorExamples: editorExamples.slice(0, 5),
     });
 
