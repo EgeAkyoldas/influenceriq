@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       'Tribe Father':     { primary: 'masculinity',   secondary: 'relationships' },
     };
 
-    const allowedSorts = ['authority_score', 'followers_count', 'engagement_rate', 'relevance_score', 'username', 'is_approved', 'lead_source'];
+    const allowedSorts = ['authority_score', 'followers_count', 'engagement_rate', 'relevance_score', 'username', 'is_approved', 'lead_source', 'tier'];
     const safeSortBy = allowedSorts.includes(sortBy) ? sortBy : 'authority_score';
     const safeSortOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
       safeSortBy === 'username' || safeSortBy === 'followers_count' ? `p.${safeSortBy}` :
       safeSortBy === 'is_approved' ? `COALESCE(a.is_approved, v.is_approved)` :
       safeSortBy === 'lead_source' ? `l.source` :
+      safeSortBy === 'tier' ? `CASE COALESCE(v.editor_tier, v.tier, a.tier) WHEN 'S' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 WHEN 'C' THEN 4 WHEN 'D' THEN 5 ELSE 6 END` :
       `a.${safeSortBy}`;
 
     const countQuery = `

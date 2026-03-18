@@ -94,6 +94,8 @@ interface ReverifyJob {
   status: string;
   started_at: string | null;
   completed_at: string | null;
+  current_username: string | null;
+  eta_seconds: number | null;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -392,15 +394,31 @@ export default function CandidatesPage() {
               {/* Batch Reverify */}
               {reverifyJob?.status === 'running' ? (
                 <div className="flex items-center gap-2 ml-auto">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
-                  <span className="text-xs text-violet-400 font-medium">
-                    Reverifying {reverifyJob.processed}/{reverifyJob.total_profiles}
-                  </span>
-                  <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-violet-500 rounded-full transition-all"
-                      style={{ width: `${reverifyJob.total_profiles > 0 ? (reverifyJob.processed / reverifyJob.total_profiles) * 100 : 0}%` }}
-                    />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400 shrink-0" />
+                  <div className="flex flex-col items-end gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-violet-400 font-medium">
+                        {reverifyJob.processed}/{reverifyJob.total_profiles}
+                      </span>
+                      {reverifyJob.current_username && (
+                        <span className="text-xs text-muted-foreground">
+                          @{reverifyJob.current_username}
+                        </span>
+                      )}
+                      {reverifyJob.eta_seconds != null && reverifyJob.eta_seconds > 0 && (
+                        <span className="text-xs text-zinc-500">
+                          ~{reverifyJob.eta_seconds >= 60
+                            ? `${Math.floor(reverifyJob.eta_seconds / 60)}m ${reverifyJob.eta_seconds % 60}s`
+                            : `${reverifyJob.eta_seconds}s`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="w-36 h-1 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-violet-500 rounded-full transition-all duration-500"
+                        style={{ width: `${reverifyJob.total_profiles > 0 ? (reverifyJob.processed / reverifyJob.total_profiles) * 100 : 0}%` }}
+                      />
+                    </div>
                   </div>
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-red-400 hover:text-red-300" onClick={cancelBatchReverify}>
                     <Square className="w-3 h-3" />
@@ -506,7 +524,9 @@ export default function CandidatesPage() {
                       <TableHead className="cursor-pointer" onClick={() => handleSort('primary_cluster')}>
                         <span className="flex items-center">Archetype <SortIcon col="primary_cluster" /></span>
                       </TableHead>
-                      <TableHead>Tier</TableHead>
+                      <TableHead className="cursor-pointer" onClick={() => handleSort('tier')}>
+                        <span className="flex items-center">Tier <SortIcon col="tier" /></span>
+                      </TableHead>
                       <TableHead className="cursor-pointer" onClick={() => handleSort('lead_source')}>
                         <span className="flex items-center">Source <SortIcon col="lead_source" /></span>
                       </TableHead>

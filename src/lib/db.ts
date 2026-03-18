@@ -247,6 +247,16 @@ async function ensureSchema() {
       // Column already exists — ignore
     }
 
+    // Migration: add current_username to reverify_jobs
+    try {
+      await pipeline([
+        { type: 'execute', stmt: { sql: `ALTER TABLE reverify_jobs ADD COLUMN current_username TEXT DEFAULT NULL`, args: [] } },
+        { type: 'close' },
+      ]);
+    } catch {
+      // Column already exists — ignore
+    }
+
     // Default settings
     const settingRequests: PipelineRequest[] = [
       { type: 'execute', stmt: { sql: `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, args: serializeArgs(['min_followers', '5000']) } },

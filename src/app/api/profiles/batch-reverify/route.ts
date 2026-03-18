@@ -34,6 +34,9 @@ async function processBatchReverify(jobId: number) {
     const job = await getOne<{ status: string }>('SELECT status FROM reverify_jobs WHERE id = ?', [jobId]);
     if (job?.status === 'cancelled') break;
 
+    // Track which profile is currently being processed
+    await execute('UPDATE reverify_jobs SET current_username = ? WHERE id = ?', [profile.username, jobId]);
+
     try {
       // 1. Load cached media from DB
       const media = await getAll<{ like_count: number; comments_count: number; caption: string; timestamp: string }>(
@@ -165,7 +168,7 @@ async function processBatchReverify(jobId: number) {
     }
   }
 
-  await execute("UPDATE reverify_jobs SET status = 'complete', completed_at = datetime('now') WHERE id = ? AND status = 'running'", [jobId]);
+  await execute("UPDATE reverify_jobs SET status = 'complete', completed_at = datetime('now'), current_username = NULL WHERE id = ? AND status = 'running'", [jobId]);
 }
 
 export async function POST() {
@@ -206,9 +209,21 @@ export async function POST() {
 
 export async function GET() {
   try {
-    const current = await getOne("SELECT * FROM reverify_jobs WHERE status = 'running' LIMIT 1");
+    const current = await getOne<{
+      id: number; total_profiles: number; processed: number; errors: number;
+      status: string; started_at: string | null; current_username: string | null;
+    }>("SELECT * FROM reverify_jobs WHERE status = 'running' LIMIT 1");
     const history = await getAll('SELECT * FROM reverify_jobs ORDER BY created_at DESC LIMIT 5');
-    return NextResponse.json({ current, history });
+
+    let eta_seconds: number | null = null;
+    if (current && current.started_at && current.processed > 0) {
+      const elapsedMs = Date.now() - new Date(current.started_at + 'Z').getTime();
+      const msPerProfile = elapsedMs / current.processed;
+      const remaining = current.total_profiles - current.processed;
+      eta_seconds = Math.round((remaining * msPerProfile) / 1000);
+    }
+
+    return NextResponse.json({ current: current ? { ...current, eta_seconds } : null, history });
   } catch (error) {
     console.error('[BatchReverify] Status error:', error);
     return NextResponse.json({ error: 'Failed to get status' }, { status: 500 });
