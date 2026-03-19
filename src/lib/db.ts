@@ -218,6 +218,8 @@ async function ensureSchema() {
       `CREATE INDEX IF NOT EXISTS idx_leads_username ON leads(username)`,
       `CREATE INDEX IF NOT EXISTS idx_leads_fetch_status ON leads(fetch_status)`,
       `CREATE INDEX IF NOT EXISTS idx_leads_csv_niche ON leads(csv_niche)`,
+      `CREATE INDEX IF NOT EXISTS idx_snapshots_profile_reason ON analysis_snapshots(profile_id, snapshot_reason)`,
+      `CREATE INDEX IF NOT EXISTS idx_media_profile_id ON media(profile_id)`,
     ];
 
     const schemaRequests: PipelineRequest[] = stmts.map(sql => ({

@@ -10,7 +10,7 @@ import {
   Flame, Drama, GitMerge, Swords, Zap, Crown, Layers, Mountain,
   Handshake, RefreshCw, BookOpen, HeartHandshake, Dumbbell, Sword, Anvil, TreePine,
   BarChart2, LayoutList, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight, Trash2,
-  RotateCcw, Square, Loader2
+  RotateCcw, Square, Loader2, Download
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -59,8 +59,14 @@ interface ProfileRow {
   primary_cluster: string | null;
   secondary_cluster: string | null;
   authority_score: number | null;
+  relevance_score: number | null;
   engagement_rate: number | null;
   tier: string | null;
+  tier_reason: string | null;
+  audience_alignment: string | null;
+  content_style: string | null;
+  content_summary: string | null;
+  risk_flags: string[];
   monetization_signals: string[];
   is_verified: boolean;
   has_been_reverified: boolean;
@@ -68,6 +74,7 @@ interface ProfileRow {
   rejection_reason: string | null;
   dynamic_tags: string[];
   lead_source: string | null;
+  analyzed_at: string | null;
 }
 
 interface PaginationData {
@@ -229,7 +236,7 @@ export default function CandidatesPage() {
       return;
     }
     await pollReverifyStatus();
-    reverifyPollRef.current = setInterval(pollReverifyStatus, 3000);
+    reverifyPollRef.current = setInterval(pollReverifyStatus, 5000);
   };
 
   const cancelBatchReverify = async () => {
@@ -243,6 +250,67 @@ export default function CandidatesPage() {
     await fetch('/api/profiles/batch-reverify', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reset' }) });
     await pollReverifyStatus();
     fetchProfiles();
+  };
+
+  const handleExportCSV = async () => {
+    const params = new URLSearchParams();
+    if (filters.cluster) params.set('cluster', filters.cluster);
+    if (filters.tier) params.set('tier', filters.tier);
+    if (filters.archetype) params.set('archetype', filters.archetype);
+    if (filters.search) params.set('search', filters.search);
+    if (filters.source) params.set('source', filters.source);
+    params.set('sortBy', filters.sortBy);
+    params.set('sortOrder', filters.sortOrder);
+    params.set('limit', '10000');
+    params.set('page', '1');
+
+    const res = await fetch(`/api/profiles?${params}`);
+    const data = await res.json();
+    const rows: ProfileRow[] = data.data || [];
+
+    const headers = [
+      'instagram_url', 'username', 'full_name', 'followers_count',
+      'primary_cluster', 'secondary_cluster', 'tier', 'tier_reason',
+      'authority_score', 'relevance_score', 'engagement_rate',
+      'audience_alignment', 'content_style', 'content_summary',
+      'status', 'rejection_reason', 'lead_source',
+      'monetization_signals', 'risk_flags', 'dynamic_tags', 'analyzed_at',
+    ];
+    const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csvRows = [
+      headers.join(','),
+      ...rows.map(p => [
+        `https://www.instagram.com/${p.username}`,
+        escape(p.username),
+        escape(p.full_name || ''),
+        p.followers_count,
+        p.primary_cluster || '',
+        p.secondary_cluster || '',
+        p.tier || '',
+        escape(p.tier_reason || ''),
+        p.authority_score ?? '',
+        p.relevance_score ?? '',
+        p.engagement_rate ?? '',
+        escape(p.audience_alignment || ''),
+        escape(p.content_style || ''),
+        escape(p.content_summary || ''),
+        p.is_approved === 1 ? 'approved' : p.is_approved === 0 ? 'rejected' : '',
+        escape(p.rejection_reason || ''),
+        p.lead_source || '',
+        escape((p.monetization_signals || []).join('; ')),
+        escape((p.risk_flags || []).join('; ')),
+        escape((p.dynamic_tags || []).join('; ')),
+        p.analyzed_at || '',
+      ].join(',')),
+    ];
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `candidates-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const SortIcon = ({ col }: { col: string }) => {
@@ -370,6 +438,11 @@ export default function CandidatesPage() {
 
               <Button variant="ghost" size="sm" onClick={resetFilters}>
                 Reset
+              </Button>
+
+              <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleExportCSV}>
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
               </Button>
 
               {selectMode ? (
