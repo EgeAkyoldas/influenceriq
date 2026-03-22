@@ -51,7 +51,7 @@ class RateLimiter {
   private queue: Array<() => Promise<unknown>> = [];
   private processing = false;
   private lastRequestTime = 0;
-  private minInterval = 5000; // 5s between requests (~12/min, safe for Meta limits)
+  private minInterval = 3000; // 3s between requests (~20/min, safe for Meta limits)
 
   async add<T>(fn: () => Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -90,13 +90,13 @@ class RateLimiter {
 
 const rateLimiter = new RateLimiter();
 
-async function fetchWithRetry(url: string, retries = 4): Promise<Response> {
+async function fetchWithRetry(url: string, retries = 2): Promise<Response> {
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url);
     
     // Handle HTTP 429
     if (response.status === 429) {
-      const waitTime = Math.pow(2, i + 1) * 30000; // 60s, 120s, 240s, 480s
+      const waitTime = Math.pow(2, i) * 15000; // 15s, 30s (max 2 retries)
       console.log(`[Instagram] ⏳ HTTP 429 rate limited. Waiting ${waitTime / 1000}s before retry ${i + 1}/${retries}`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
       continue;
@@ -107,7 +107,7 @@ async function fetchWithRetry(url: string, retries = 4): Promise<Response> {
     try {
       const data = await cloned.json();
       if (data?.error?.code === 4) {
-        const waitTime = Math.pow(2, i + 1) * 30000; // 60s, 120s, 240s, 480s
+        const waitTime = Math.pow(2, i) * 15000; // 15s, 30s
         console.log(`[Instagram] ⏳ API rate limit (#4). Waiting ${waitTime / 1000}s before retry ${i + 1}/${retries}`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         continue;

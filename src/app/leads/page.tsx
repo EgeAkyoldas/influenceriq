@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Upload, Search, Filter, Play, Square, Trash2, ChevronLeft, ChevronRight, RefreshCw, Plus, X, Download } from 'lucide-react';
+import { Upload, Search, Filter, Play, Square, Trash2, ChevronLeft, ChevronRight, RefreshCw, Plus, X, Download, Clock, Zap } from 'lucide-react';
 
 interface Lead {
   id: number;
@@ -32,6 +32,16 @@ interface BatchJob {
   status: string;
   started_at: string | null;
   completed_at: string | null;
+}
+
+interface RecentActivity {
+  username: string;
+  fetch_status: string;
+  error_message: string | null;
+  profile_pic_url: string | null;
+  followers_count: number | null;
+  full_name: string | null;
+  updated_at: string;
 }
 
 
@@ -82,6 +92,8 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchJob, setBatchJob] = useState<BatchJob | null>(null);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [now, setNow] = useState(() => Date.now());
   const [importResult, setImportResult] = useState<Record<string, number> | null>(null);
   const [importing, setImporting] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -89,6 +101,7 @@ export default function LeadsPage() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importSource, setImportSource] = useState('11 March');
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [fetchConcurrency, setFetchConcurrency] = useState<1 | 3 | 5>(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const batchPollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -128,22 +141,66 @@ export default function LeadsPage() {
       const res = await fetch('/api/leads/batch');
       const data = await res.json();
       setBatchJob(data.current || null);
+      if (data.recentActivity) setRecentActivity(data.recentActivity);
       if (data.current?.status === 'running') {
-        fetchLeads(pagination.page, true); // silent refresh — no loading spinner
+        fetchLeads(pagination.page, true);
       }
     } catch (err) {
       console.error('Batch status error:', err);
     }
   }, [fetchLeads, pagination.page]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
+  const formatElapsed = (startedAt: string | null) => {
+    if (!startedAt) return '—';
+    const start = new Date(startedAt + 'Z').getTime();
+    const elapsed = Math.floor((now - start) / 1000);
+    const h = Math.floor(elapsed / 3600);
+    const m = Math.floor((elapsed % 3600) / 60);
+    const s = elapsed % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const getETA = (job: BatchJob) => {
+    if (!job.started_at || job.processed === 0) return '—';
+    const start = new Date(job.started_at + 'Z').getTime();
+    const elapsed = (now - start) / 1000;
+    const rate = job.processed / elapsed;
+    const remaining = job.total_leads - job.processed;
+    const etaSec = Math.ceil(remaining / rate);
+    const h = Math.floor(etaSec / 3600);
+    const m = Math.floor((etaSec % 3600) / 60);
+    if (h > 0) return `~${h}h ${m}m`;
+    if (m > 0) return `~${m}m`;
+    return '<1m';
+  };
+
+  const formatTime = (ts: string | null) => {
+    if (!ts) return '—';
+    try { return new Date(ts + 'Z').toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch { return '—'; }
+  };
+
+  const getSpeed = (job: BatchJob) => {
+    if (!job.started_at || job.processed === 0) return '—';
+    const start = new Date(job.started_at + 'Z').getTime();
+    const elapsed = (now - start) / 1000;
+    return `${((job.processed / elapsed) * 60).toFixed(1)}/min`;
+  };
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchBatchStatus();
     const interval = setInterval(fetchBatchStatus, 3000);
     batchPollRef.current = interval;
     return () => clearInterval(interval);
   }, [fetchBatchStatus]);
+
+  // Tick `now` every second for live elapsed/eta/speed
+  useEffect(() => {
+    if (!batchJob || batchJob.status !== 'running') return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [batchJob]);
 
   const handleCSVUpload = async (file: File, source: string) => {
     setImporting(true);
@@ -184,7 +241,11 @@ export default function LeadsPage() {
 
   const startBatch = async () => {
     try {
-      const res = await fetch('/api/leads/batch', { method: 'POST' });
+      const res = await fetch('/api/leads/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concurrency: fetchConcurrency }),
+      });
       const data = await res.json();
       if (res.ok) {
         setBatchJob({ id: data.batch_id, total_leads: data.pending_leads, processed: 0, fetched: 0, unfetchable: 0, errors: 0, status: 'running', started_at: null, completed_at: null });
@@ -290,25 +351,102 @@ export default function LeadsPage() {
 
       {/* Batch Progress */}
       {batchJob && batchJob.status === 'running' && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 pb-3">
             <div className="flex items-center gap-3">
-              <RefreshCw size={18} className="text-blue-400 animate-spin" />
-              <span className="font-semibold">Batch Processing</span>
-              <span className="text-zinc-400 text-sm">{batchJob.processed}/{batchJob.total_leads}</span>
+              <RefreshCw size={18} className="text-cyan-400 animate-spin" />
+              <span className="font-semibold text-lg">Batch Processing</span>
+              <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-md text-sm font-mono">{batchJob.processed}/{batchJob.total_leads}</span>
             </div>
-            <button onClick={cancelBatch} className="flex items-center gap-1 px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 text-sm">
+            <button onClick={cancelBatch} className="flex items-center gap-1 px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 text-sm">
               <Square size={14} /> Cancel
             </button>
           </div>
-          <div className="w-full bg-zinc-800 rounded-full h-2.5">
-            <div className="bg-linear-to-r from-violet-500 to-cyan-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${batchJob.total_leads > 0 ? (batchJob.processed / batchJob.total_leads) * 100 : 0}%` }} />
+
+          {/* Progress Bar */}
+          <div className="px-4">
+            <div className="w-full bg-zinc-800 rounded-full h-2">
+              <div className="bg-linear-to-r from-violet-500 via-cyan-500 to-emerald-500 h-2 rounded-full transition-all duration-500 relative" style={{ width: `${batchJob.total_leads > 0 ? (batchJob.processed / batchJob.total_leads) * 100 : 0}%` }}>
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg shadow-cyan-500/50 animate-pulse" />
+              </div>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-3 sm:gap-6 mt-3 text-sm text-zinc-400">
+
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
+            <div className="flex items-center gap-2 text-sm">
+              <Clock size={14} className="text-zinc-500" />
+              <span className="text-zinc-500">Started</span>
+              <span className="text-zinc-300 font-mono ml-auto">{formatTime(batchJob.started_at)}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Zap size={14} className="text-amber-500" />
+              <span className="text-zinc-500">Elapsed</span>
+              <span className="text-amber-400 font-mono ml-auto">{formatElapsed(batchJob.started_at)}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Clock size={14} className="text-cyan-500" />
+              <span className="text-zinc-500">ETA</span>
+              <span className="text-cyan-400 font-mono ml-auto">{getETA(batchJob)}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Zap size={14} className="text-emerald-500" />
+              <span className="text-zinc-500">Speed</span>
+              <span className="text-emerald-400 font-mono ml-auto">
+                {getSpeed(batchJob)}
+              </span>
+            </div>
+          </div>
+
+          {/* Counts */}
+          <div className="flex flex-wrap gap-4 px-4 pb-3 text-sm text-zinc-400">
             <span>✓ Fetched: <strong className="text-emerald-400">{batchJob.fetched}</strong></span>
             <span>✗ Unfetchable: <strong className="text-zinc-300">{batchJob.unfetchable}</strong></span>
             <span>⚠ Errors: <strong className="text-red-400">{batchJob.errors}</strong></span>
+            <span className="ml-auto text-zinc-500">{batchJob.total_leads > 0 ? ((batchJob.processed / batchJob.total_leads) * 100).toFixed(1) : 0}%</span>
           </div>
+
+          {/* Activity Feed */}
+          {recentActivity.length > 0 && (
+            <div className="border-t border-zinc-800">
+              <div className="px-4 py-2 text-xs text-zinc-500 uppercase tracking-wider font-semibold bg-zinc-800/30">Recent Activity</div>
+              <div className="max-h-[200px] overflow-y-auto divide-y divide-zinc-800/50 scrollbar-thin">
+                {recentActivity.map((a, i) => (
+                  <div key={`${a.username}-${i}`} className="flex items-center gap-3 px-4 py-2 hover:bg-zinc-800/30 transition-colors">
+                    {/* Avatar */}
+                    <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 overflow-hidden">
+                      {a.profile_pic_url ? (
+                        <img src={a.profile_pic_url} alt="" className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      ) : (
+                        <span className="text-xs text-zinc-600">@</span>
+                      )}
+                    </div>
+                    {/* Username + Name */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <a href={`https://instagram.com/${a.username}`} target="_blank" rel="noopener noreferrer"
+                          className="text-sm text-zinc-300 hover:text-white font-medium truncate">@{a.username}</a>
+                        {a.full_name && <span className="text-xs text-zinc-600 truncate hidden sm:inline">{a.full_name}</span>}
+                      </div>
+                    </div>
+                    {/* Followers */}
+                    <div className="text-xs text-zinc-500 font-mono w-16 text-right shrink-0">
+                      {a.followers_count != null ? (a.followers_count >= 1000 ? `${(a.followers_count / 1000).toFixed(1)}K` : a.followers_count) : '—'}
+                    </div>
+                    {/* Status Badge */}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase border shrink-0 ${
+                      a.fetch_status === 'fetched' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                      a.fetch_status === 'fetching' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse' :
+                      a.fetch_status === 'error' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                      'bg-zinc-500/20 text-zinc-400 border-zinc-500/30'
+                    }`}>{a.fetch_status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -355,8 +493,22 @@ export default function LeadsPage() {
             <RefreshCw size={14} /> Reset Errors
           </button>
         )}
+        {/* Speed Toggle */}
+        <div className={`flex items-center gap-1 bg-zinc-800 border border-zinc-700 rounded-lg p-0.5 ${statusCounts.some(s => s.fetch_status === 'error' && s.count > 0) ? '' : 'ml-auto'}`}>
+          {([1, 3, 5] as const).map(speed => (
+            <button key={speed} onClick={() => setFetchConcurrency(speed)}
+              disabled={batchJob?.status === 'running'}
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all disabled:opacity-50 ${
+                fetchConcurrency === speed
+                  ? speed === 1 ? 'bg-zinc-600 text-white' : speed === 3 ? 'bg-cyan-600 text-white' : 'bg-amber-600 text-white'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-700'
+              }`}>
+              {speed}x
+            </button>
+          ))}
+        </div>
         <button onClick={startBatch} disabled={!!batchJob?.status && batchJob.status === 'running'}
-          className={`flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-sm font-medium ${statusCounts.some(s => s.fetch_status === 'error' && s.count > 0) ? '' : 'ml-auto'}`}>
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-sm font-medium">
           <Play size={14} /> Start Batch Fetch
         </button>
       </div>
