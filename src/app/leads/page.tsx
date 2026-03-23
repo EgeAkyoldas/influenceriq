@@ -104,6 +104,7 @@ export default function LeadsPage() {
   const [fetchConcurrency, setFetchConcurrency] = useState<1 | 3 | 5>(3);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const batchPollRef = useRef<NodeJS.Timeout | null>(null);
+  const batchActiveRef = useRef(false); // track if batch loop is active
 
   const fetchLeads = useCallback(async (page = 1, silent = false) => {
     if (!silent) setLoading(true);
@@ -240,26 +241,78 @@ export default function LeadsPage() {
   };
 
   const startBatch = async () => {
+    if (batchActiveRef.current) return;
+    batchActiveRef.current = true;
+
+    // Set initial UI state
+    setBatchJob({ id: 0, total_leads: 0, processed: 0, fetched: 0, unfetchable: 0, errors: 0, status: 'running', started_at: new Date().toISOString().replace('Z', ''), completed_at: null });
+
     try {
-      const res = await fetch('/api/leads/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ concurrency: fetchConcurrency }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setBatchJob({ id: data.batch_id, total_leads: data.pending_leads, processed: 0, fetched: 0, unfetchable: 0, errors: 0, status: 'running', started_at: null, completed_at: null });
-      } else {
-        alert(data.error);
+      let done = false;
+      while (!done && batchActiveRef.current) {
+        const res = await fetch('/api/leads/batch/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ concurrency: fetchConcurrency }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          console.error('[Batch] Process error:', data);
+          break;
+        }
+
+        // Update batch job state from response
+        if (data.batchId) {
+          setBatchJob(prev => prev ? { ...prev, id: data.batchId } : prev);
+        }
+
+        // Count results
+        if (data.processed && Array.isArray(data.processed)) {
+          setBatchJob(prev => {
+            if (!prev) return prev;
+            const newFetched = data.processed.filter((p: { status: string }) => p.status === 'fetched').length;
+            const newUnfetchable = data.processed.filter((p: { status: string }) => p.status === 'unfetchable').length;
+            const newErrors = data.processed.filter((p: { status: string }) => p.status === 'error').length;
+            return {
+              ...prev,
+              processed: prev.processed + data.processed.length,
+              fetched: prev.fetched + newFetched,
+              unfetchable: prev.unfetchable + newUnfetchable,
+              errors: prev.errors + newErrors,
+              total_leads: prev.processed + data.processed.length + (data.remaining || 0),
+            };
+          });
+        }
+
+        // Refresh leads table and activity feed
+        fetchLeads(pagination.page, true);
+        fetchBatchStatus();
+
+        done = data.done || data.aborted;
+
+        if (data.aborted) {
+          alert(data.processed?.find((p: { status: string }) => p.status === 'abort')?.error || 'Batch aborted due to rate limit or token issue.');
+        }
+
+        // Small delay between chunks to not hammer the server
+        if (!done) await new Promise(r => setTimeout(r, 500));
       }
     } catch (err) {
-      alert(`Batch error: ${(err as Error).message}`);
+      console.error('Batch loop error:', err);
     }
+
+    batchActiveRef.current = false;
+    setBatchJob(prev => prev ? { ...prev, status: 'complete', completed_at: new Date().toISOString() } : null);
+    fetchLeads(pagination.page);
+    fetchBatchStatus();
   };
 
   const cancelBatch = async () => {
-    if (!batchJob) return;
-    await fetch('/api/leads/batch', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_id: batchJob.id }) });
+    batchActiveRef.current = false; // stop the loop
+    if (batchJob) {
+      await fetch('/api/leads/batch', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_id: batchJob.id }) });
+    }
     setBatchJob(null);
     fetchLeads(pagination.page);
   };
@@ -374,28 +427,34 @@ export default function LeadsPage() {
           </div>
 
           {/* Stats Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
-            <div className="flex items-center gap-2 text-sm">
-              <Clock size={14} className="text-zinc-500" />
-              <span className="text-zinc-500">Started</span>
-              <span className="text-zinc-300 font-mono ml-auto">{formatTime(batchJob.started_at)}</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-4">
+            <div className="bg-zinc-800/50 rounded-lg px-3 py-2.5 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-zinc-500 uppercase tracking-wider mb-1">
+                <Clock size={12} />
+                <span>Started</span>
+              </div>
+              <div className="text-zinc-300 font-mono text-sm font-semibold">{formatTime(batchJob.started_at)}</div>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Zap size={14} className="text-amber-500" />
-              <span className="text-zinc-500">Elapsed</span>
-              <span className="text-amber-400 font-mono ml-auto">{formatElapsed(batchJob.started_at)}</span>
+            <div className="bg-zinc-800/50 rounded-lg px-3 py-2.5 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-amber-500/70 uppercase tracking-wider mb-1">
+                <Zap size={12} />
+                <span>Elapsed</span>
+              </div>
+              <div className="text-amber-400 font-mono text-sm font-semibold">{formatElapsed(batchJob.started_at)}</div>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Clock size={14} className="text-cyan-500" />
-              <span className="text-zinc-500">ETA</span>
-              <span className="text-cyan-400 font-mono ml-auto">{getETA(batchJob)}</span>
+            <div className="bg-zinc-800/50 rounded-lg px-3 py-2.5 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-cyan-500/70 uppercase tracking-wider mb-1">
+                <Clock size={12} />
+                <span>ETA</span>
+              </div>
+              <div className="text-cyan-400 font-mono text-sm font-semibold">{getETA(batchJob)}</div>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Zap size={14} className="text-emerald-500" />
-              <span className="text-zinc-500">Speed</span>
-              <span className="text-emerald-400 font-mono ml-auto">
-                {getSpeed(batchJob)}
-              </span>
+            <div className="bg-zinc-800/50 rounded-lg px-3 py-2.5 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-500/70 uppercase tracking-wider mb-1">
+                <Zap size={12} />
+                <span>Speed</span>
+              </div>
+              <div className="text-emerald-400 font-mono text-sm font-semibold">{getSpeed(batchJob)}</div>
             </div>
           </div>
 
